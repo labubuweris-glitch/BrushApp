@@ -1,6 +1,7 @@
 package com.brushapp
 
 import android.Manifest
+import android.content.Intent
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.pm.PackageManager
@@ -79,8 +80,12 @@ private val Success = Color(0xFF16803C)
 private const val MESSAGE_CHANNEL_ID = "brushapp_messages"
 
 class MainActivity : ComponentActivity() {
+    private var notificationPeerUid by mutableStateOf("")
+    private var notificationPeerName by mutableStateOf("")
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        readNotificationIntent(intent)
         createMessageNotificationChannel()
         setContent {
             MaterialTheme(
@@ -93,9 +98,20 @@ class MainActivity : ComponentActivity() {
                     onSurface = TextDark
                 )
             ) {
-                BrushAppRoot()
+                BrushAppRoot(notificationPeerUid, notificationPeerName)
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        readNotificationIntent(intent)
+    }
+
+    private fun readNotificationIntent(intent: Intent?) {
+        notificationPeerUid = intent?.getStringExtra("notification_peer_uid").orEmpty()
+        notificationPeerName = intent?.getStringExtra("notification_peer_name").orEmpty()
     }
 
     private fun createMessageNotificationChannel() {
@@ -114,7 +130,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun BrushAppRoot() {
+private fun BrushAppRoot(notificationPeerUid: String, notificationPeerName: String) {
     val auth = remember { FirebaseAuth.getInstance() }
     val context = androidx.compose.ui.platform.LocalContext.current
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -155,6 +171,8 @@ private fun BrushAppRoot() {
     } else {
         UserArea(
             user = currentUser!!,
+            notificationPeerUid = notificationPeerUid,
+            notificationPeerName = notificationPeerName,
             onSignOut = { auth.signOut() }
         )
     }
@@ -257,7 +275,12 @@ private fun AuthField(
 }
 
 @Composable
-private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
+private fun UserArea(
+    user: FirebaseUser,
+    notificationPeerUid: String,
+    notificationPeerName: String,
+    onSignOut: () -> Unit
+) {
     val db = remember { FirebaseFirestore.getInstance() }
     val uid = user.uid
     val email = user.email.orEmpty()
@@ -295,6 +318,22 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
                 }
             }
         onDispose { listener.remove() }
+    }
+
+    LaunchedEffect(notificationPeerUid, directoryUsers, directoryLoading, loadingProfile) {
+        if (notificationPeerUid.isNotBlank() && !directoryLoading && !loadingProfile && selectedPeer == null) {
+            val peer = directoryUsers.firstOrNull { it.peer.uid == notificationPeerUid }?.peer
+            if (peer != null) {
+                openingPeerUid = peer.uid
+                openConversation(db, uid, displayName, peer) { error ->
+                    openingPeerUid = ""
+                    if (error == null) selectedPeer = peer
+                    else directoryError = "Gagal membuka chat dari notifikasi: $error"
+                }
+            } else if (directoryUsers.isNotEmpty()) {
+                directoryError = "Pengirim notifikasi tidak ditemukan di daftar pengguna."
+            }
+        }
     }
 
     LaunchedEffect(uid) {
