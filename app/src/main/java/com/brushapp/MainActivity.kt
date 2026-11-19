@@ -616,6 +616,18 @@ private fun ChatThreadScreen(uid: String, chat: ChatItem, back: () -> Unit) {
                         )).addOnSuccessListener {
                             finishedAttempt = thisAttempt
                             if (sendAttempt == thisAttempt) sending = false
+                            serverCheck = "WRITE BERHASIL: Firestore mengonfirmasi pesan tersimpan. Memeriksa ulang dari server..."
+                            msgRef.get(com.google.firebase.firestore.Source.SERVER)
+                                .addOnSuccessListener { serverDoc ->
+                                    serverCheck = if (serverDoc.exists()) {
+                                        "WRITE TERBUKTI: pesan baru ditemukan saat dibaca langsung dari server Firestore."
+                                    } else {
+                                        "WRITE DITERIMA, tetapi pesan belum ditemukan pada pembacaan server."
+                                    }
+                                }
+                                .addOnFailureListener { verifyError ->
+                                    serverCheck = "WRITE BERHASIL, READ-BACK GAGAL: ${verifyError.localizedMessage ?: "server tidak merespons"}"
+                                }
                             chatRef.update(
                                 "lastMessage", text,
                                 "updatedAt", FieldValue.serverTimestamp()
