@@ -286,6 +286,7 @@ private data class MessageItem(
 private fun BrushHomeScreen(uid: String, username: String, signOut: () -> Unit) {
     val db = remember { FirebaseFirestore.getInstance() }
     var chats by remember { mutableStateOf<List<ChatItem>>(emptyList()) }
+    val profileCache = remember { mutableStateMapOf<String, String>() }
     var selected by remember { mutableStateOf<ChatItem?>(null) }
     var tab by remember { mutableIntStateOf(0) }
     var loading by remember { mutableStateOf(true) }
@@ -308,18 +309,38 @@ private fun BrushHomeScreen(uid: String, username: String, signOut: () -> Unit) 
                                 pending--
                                 if (pending == 0) { chats = result; loading = false }
                             } else {
-                                db.collection("profiles").document(other).get()
-                                    .addOnSuccessListener { profile ->
-                                        result.add(ChatItem(doc.id, other, profile.getString("username") ?: "pengguna",
-                                            doc.getString("lastMessage") ?: "", doc.getTimestamp("updatedAt")))
-                                        pending--
-                                        if (pending == 0) { chats = result.sortedByDescending { it.updatedAt?.seconds ?: 0L }; loading = false }
+                                val cachedName = profileCache[other]
+                                if (cachedName != null) {
+                                    result.add(ChatItem(doc.id, other, cachedName,
+                                        doc.getString("lastMessage") ?: "", doc.getTimestamp("updatedAt")))
+                                    pending--
+                                    if (pending == 0) {
+                                        chats = result.sortedByDescending { it.updatedAt?.seconds ?: 0L }
+                                        loading = false
                                     }
-                                    .addOnFailureListener {
-                                        result.add(ChatItem(doc.id, other, "pengguna", doc.getString("lastMessage") ?: "", doc.getTimestamp("updatedAt")))
-                                        pending--
-                                        if (pending == 0) { chats = result; loading = false }
-                                    }
+                                } else {
+                                    db.collection("profiles").document(other).get()
+                                        .addOnSuccessListener { profile ->
+                                            val name = profile.getString("username") ?: "pengguna"
+                                            profileCache[other] = name
+                                            result.add(ChatItem(doc.id, other, name,
+                                                doc.getString("lastMessage") ?: "", doc.getTimestamp("updatedAt")))
+                                            pending--
+                                            if (pending == 0) {
+                                                chats = result.sortedByDescending { it.updatedAt?.seconds ?: 0L }
+                                                loading = false
+                                            }
+                                        }
+                                        .addOnFailureListener {
+                                            result.add(ChatItem(doc.id, other, "pengguna",
+                                                doc.getString("lastMessage") ?: "", doc.getTimestamp("updatedAt")))
+                                            pending--
+                                            if (pending == 0) {
+                                                chats = result.sortedByDescending { it.updatedAt?.seconds ?: 0L }
+                                                loading = false
+                                            }
+                                        }
+                                }
                             }
                         }
                     }
@@ -544,21 +565,19 @@ private fun ChatThreadScreen(uid: String, chat: ChatItem, back: () -> Unit) {
                     val text = input.trim()
                     if (text.isNotEmpty() && !sending) {
                         sending = true
+                        input = ""
+                        error = ""
                         val chatRef = db.collection("chats").document(chat.id)
                         val msgRef = chatRef.collection("messages").document()
-                        // Simpan pesan secara mandiri agar kegagalan memperbarui ringkasan chat
-                        // tidak membatalkan pesan yang sedang dikirim.
+                        // Kolom langsung dikosongkan agar terasa responsif.
+                        // Jika penyimpanan gagal, teks dikembalikan supaya tidak hilang.
                         msgRef.set(mapOf(
                             "senderId" to uid,
                             "text" to text,
                             "createdAt" to FieldValue.serverTimestamp(),
                             "readAt" to null
                         )).addOnSuccessListener {
-                            input = ""
                             sending = false
-                            error = ""
-                            // Ringkasan percakapan diperbarui terpisah; kegagalannya
-                            // tidak boleh membuat pesan dianggap gagal.
                             chatRef.update(
                                 "lastMessage", text,
                                 "updatedAt", FieldValue.serverTimestamp()
@@ -566,6 +585,7 @@ private fun ChatThreadScreen(uid: String, chat: ChatItem, back: () -> Unit) {
                                 error = "Pesan tersimpan, tetapi daftar chat belum diperbarui: ${e.localizedMessage ?: "coba lagi nanti"}"
                             }
                         }.addOnFailureListener { e ->
+                            if (input.isBlank()) input = text
                             error = "Pesan gagal disimpan: ${e.localizedMessage ?: "periksa koneksi dan izin Firestore"}"
                             sending = false
                         }
