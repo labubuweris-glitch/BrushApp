@@ -59,9 +59,8 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
 
-    // Firebase Authentication dan Cloud Firestore
+    // Tahap awal hanya menggunakan Firebase Authentication.
     implementation(platform("com.google.firebase:firebase-bom:35.2.0"))
     implementation("com.google.firebase:firebase-auth")
-    implementation("com.google.firebase:firebase-firestore")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
