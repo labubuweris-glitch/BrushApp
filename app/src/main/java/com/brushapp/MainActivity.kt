@@ -508,18 +508,22 @@ private fun UserArea(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(Modifier.weight(1f)) {
-                Text("BrushApp", color = Burgundy, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                Text("Halo, $displayName!", color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            }
-            TextButton(onClick = {
-                editedName = displayName
-                editedPhoto = profilePhoto
-                editingProfile = !editingProfile
-                profileError = ""
-            }) { Text("PROFIL", color = Burgundy, fontWeight = FontWeight.Bold) }
-            TextButton(onClick = onSignOut) {
-                Text("KELUAR", color = Burgundy, fontWeight = FontWeight.Bold)
+            if (!editingProfile) {
+                Column(Modifier.weight(1f)) {
+                    Text("BrushApp", color = Burgundy, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    Text("Halo, $displayName!", color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                }
+                TextButton(onClick = {
+                    editedName = displayName
+                    editedPhoto = profilePhoto
+                    editingProfile = true
+                    profileError = ""
+                }) { Text("PROFIL", color = Burgundy, fontWeight = FontWeight.Bold) }
+            } else {
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { editingProfile = false; profileError = "" }) {
+                    Text("SELESAI", color = Burgundy, fontWeight = FontWeight.Bold)
+                }
             }
         }
         if (editingProfile) {
@@ -579,8 +583,17 @@ private fun UserArea(
                     }
                 }
             }
-            Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(12.dp))
         }
+        if (editingProfile) {
+            Spacer(Modifier.weight(1f))
+            TextButton(
+                onClick = onSignOut,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ) {
+                Text("Keluar dari Akun", color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold)
+            }
+        } else {
         Spacer(Modifier.height(18.dp))
         Text("DAFTAR PENGGUNA", color = Burgundy, fontSize = 16.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(5.dp))
@@ -677,6 +690,7 @@ private fun UserArea(
                     }
                 }
             }
+        }
         }
     }
 }
