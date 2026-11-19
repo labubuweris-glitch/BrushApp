@@ -2,14 +2,20 @@ package com.brushapp
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,6 +49,8 @@ import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.firestore.Query
+import java.security.MessageDigest
 
 private val Burgundy = Color(0xFF800020)
 private val Background = Color(0xFFFFFFFF)
@@ -203,6 +211,11 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
     var searchMessage by remember { mutableStateOf("") }
     var foundName by remember { mutableStateOf("") }
     var foundEmail by remember { mutableStateOf("") }
+    var foundUid by remember { mutableStateOf("") }
+    var selectedPeer by remember { mutableStateOf<ChatPeer?>(null) }
+    var openingChat by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = selectedPeer != null) { selectedPeer = null }
 
     LaunchedEffect(uid) {
         loadingProfile = true
@@ -215,6 +228,11 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
                 profileError = "Gagal memuat profil: ${error.localizedMessage ?: "Kesalahan tidak diketahui"}"
                 loadingProfile = false
             }
+    }
+
+    if (selectedPeer != null) {
+        ChatScreen(db, uid, selectedPeer!!) { selectedPeer = null }
+        return
     }
 
     if (loadingProfile) {
@@ -323,6 +341,7 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
                 searchMessage = ""
                 foundName = ""
                 foundEmail = ""
+                foundUid = ""
             },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Email pengguna") },
@@ -347,7 +366,8 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
                                 if (snapshot.exists()) {
                                     foundName = snapshot.getString("displayName").orEmpty()
                                     foundEmail = snapshot.getString("email").orEmpty()
-                                    searchMessage = if (foundName.isNotBlank()) "Akun BrushApp ditemukan." else "Data akun tidak lengkap."
+                                    foundUid = snapshot.getString("uid").orEmpty()
+                                    searchMessage = if (foundName.isNotBlank() && foundUid.isNotBlank()) "Akun BrushApp ditemukan." else "Data akun tidak lengkap."
                                 } else {
                                     searchMessage = "Akun dengan email tersebut belum ditemukan."
                                 }
@@ -375,10 +395,28 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
                 fontSize = 14.sp
             )
         }
-        if (foundName.isNotBlank()) {
+        if (foundName.isNotBlank() && foundUid.isNotBlank()) {
             Spacer(Modifier.height(10.dp))
             Text(foundName, color = TextDark, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text(foundEmail, color = TextMuted, fontSize = 14.sp)
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = {
+                    val peer = ChatPeer(foundUid, foundName, foundEmail)
+                    openingChat = true
+                    openConversation(db, uid, displayName, email, peer) { error ->
+                        openingChat = false
+                        if (error == null) selectedPeer = peer
+                        else searchMessage = "Gagal membuka chat: $error"
+                    }
+                },
+                enabled = !openingChat,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Burgundy)
+            ) {
+                if (openingChat) CircularProgressIndicator(Modifier.height(20.dp), color = Color.White, strokeWidth = 2.dp)
+                else Text("BUKA CHAT")
+            }
         }
         Spacer(Modifier.height(24.dp))
         TextButton(onClick = onSignOut, modifier = Modifier.align(Alignment.CenterHorizontally)) {
@@ -396,5 +434,158 @@ private fun friendlyAuthError(error: Exception?): String {
         raw.contains("network", ignoreCase = true) -> "Koneksi internet bermasalah. Coba lagi."
         raw.isNotBlank() -> raw
         else -> "Terjadi kesalahan. Silakan coba lagi."
+    }
+}
+
+
+private data class ChatPeer(val uid: String, val name: String, val email: String)
+private data class ChatMessage(val id: String, val senderUid: String, val text: String)
+
+private fun conversationId(firstUid: String, secondUid: String): String {
+    val pair = listOf(firstUid, secondUid).sorted().joinToString("|")
+    val digest = MessageDigest.getInstance("SHA-256").digest(pair.toByteArray(Charsets.UTF_8))
+    return digest.joinToString("") { byte -> "%02x".format(byte) }
+}
+
+private fun openConversation(
+    db: FirebaseFirestore, currentUid: String, currentName: String, currentEmail: String,
+    peer: ChatPeer, onFinished: (String?) -> Unit
+) {
+    val id = conversationId(currentUid, peer.uid)
+    val ref = db.collection("conversations").document(id)
+    ref.get().addOnSuccessListener { snapshot ->
+        if (snapshot.exists()) onFinished(null)
+        else {
+            val data = hashMapOf<String, Any>(
+                "members" to listOf(currentUid, peer.uid).sorted(),
+                "memberInfo" to mapOf(
+                    currentUid to mapOf("displayName" to currentName, "email" to currentEmail),
+                    peer.uid to mapOf("displayName" to peer.name, "email" to peer.email)
+                ),
+                "createdBy" to currentUid,
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp(),
+                "lastMessage" to "",
+                "lastSenderUid" to ""
+            )
+            ref.set(data).addOnSuccessListener { onFinished(null) }
+                .addOnFailureListener { e -> onFinished(e.localizedMessage ?: "Tidak dapat membuat ruang chat") }
+        }
+    }.addOnFailureListener { e -> onFinished(e.localizedMessage ?: "Tidak dapat membuka ruang chat") }
+}
+
+@Composable
+private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer, onBack: () -> Unit) {
+    val id = conversationId(currentUid, peer.uid)
+    val conversation = remember(id) { db.collection("conversations").document(id) }
+    var messages by remember(id) { mutableStateOf<List<ChatMessage>>(emptyList()) }
+    var input by remember(id) { mutableStateOf("") }
+    var loading by remember(id) { mutableStateOf(true) }
+    var sending by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+
+    DisposableEffect(id) {
+        val listener = conversation.collection("messages")
+            .orderBy("createdAt", Query.Direction.ASCENDING)
+            .addSnapshotListener { snapshot, exception ->
+                if (exception != null) {
+                    error = "Gagal memuat pesan: ${exception.localizedMessage ?: "Kesalahan tidak diketahui"}"
+                    loading = false
+                } else if (snapshot != null) {
+                    messages = snapshot.documents.map { doc ->
+                        ChatMessage(doc.id, doc.getString("senderUid").orEmpty(), doc.getString("text").orEmpty())
+                    }
+                    loading = false
+                }
+            }
+        onDispose { listener.remove() }
+    }
+
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+    }
+
+    Column(Modifier.fillMaxSize().background(Background).imePadding()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().background(Color(0xFFFFF8FA)).padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onBack) { Text("‹ Kembali", color = Burgundy) }
+            Column(Modifier.padding(start = 6.dp)) {
+                Text(peer.name, color = TextDark, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(peer.email, color = TextMuted, fontSize = 11.sp)
+            }
+        }
+        if (error.isNotBlank()) Text(error, color = Burgundy, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
+        if (loading) {
+            Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(color = Burgundy)
+                Spacer(Modifier.height(8.dp))
+                Text("Memuat pesan...", color = TextMuted)
+            }
+        } else if (messages.isEmpty()) {
+            Column(Modifier.weight(1f).fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Belum ada pesan", color = TextDark, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+                Text("Kirim pesan pertama untuk memulai percakapan.", color = TextMuted, fontSize = 13.sp)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp),
+                state = listState,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(messages, key = { it.id }) { message ->
+                    val mine = message.senderUid == currentUid
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
+                        Column(
+                            Modifier.widthIn(max = 300.dp)
+                                .background(if (mine) Color(0xFFF5E5EB) else Color(0xFFF1F1F1), RoundedCornerShape(14.dp))
+                                .padding(horizontal = 13.dp, vertical = 9.dp)
+                        ) {
+                            Text(message.text, color = TextDark, fontSize = 15.sp)
+                            Text(if (mine) "Kamu" else peer.name, color = TextMuted, fontSize = 10.sp,
+                                modifier = Modifier.align(Alignment.End).padding(top = 4.dp))
+                        }
+                    }
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().background(Color(0xFFF8F6F7)).padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = input,
+                onValueChange = { if (it.length <= 4000) input = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Tulis pesan...") },
+                maxLines = 4,
+                shape = RoundedCornerShape(17.dp),
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Burgundy, cursorColor = Burgundy, unfocusedBorderColor = Color(0xFFD8D2D6))
+            )
+            Spacer(Modifier.width(8.dp))
+            Button(
+                onClick = {
+                    val body = input.trim()
+                    if (body.isNotBlank() && !sending) {
+                        sending = true
+                        error = ""
+                        val messageRef = conversation.collection("messages").document()
+                        val batch = db.batch()
+                        batch.set(messageRef, mapOf("senderUid" to currentUid, "text" to body, "createdAt" to FieldValue.serverTimestamp()))
+                        batch.update(conversation, mapOf("lastMessage" to body, "lastSenderUid" to currentUid, "updatedAt" to FieldValue.serverTimestamp()))
+                        batch.commit().addOnSuccessListener { input = ""; sending = false }
+                            .addOnFailureListener { e ->
+                                sending = false
+                                error = "Pesan gagal dikirim: ${e.localizedMessage ?: "Kesalahan tidak diketahui"}"
+                            }
+                    }
+                },
+                enabled = input.trim().isNotEmpty() && !sending,
+                colors = ButtonDefaults.buttonColors(containerColor = Burgundy),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                if (sending) CircularProgressIndicator(Modifier.height(18.dp), color = Color.White, strokeWidth = 2.dp)
+                else Text("KIRIM", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
