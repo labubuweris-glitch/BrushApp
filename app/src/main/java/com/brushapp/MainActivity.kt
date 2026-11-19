@@ -335,6 +335,7 @@ private fun UserArea(
     var openingPeerUid by remember { mutableStateOf("") }
 
     BackHandler(enabled = selectedPeer != null) { selectedPeer = null }
+    BackHandler(enabled = selectedPeer == null && searchText.isNotBlank()) { searchText = "" }
 
     DisposableEffect(db, uid) {
         directoryLoading = true
