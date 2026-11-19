@@ -341,6 +341,7 @@ private fun UserArea(
     var selectedPeer by remember { mutableStateOf<ChatPeer?>(null) }
     var openingPeerUid by remember { mutableStateOf("") }
     var showExitDialog by remember { mutableStateOf(false) }
+    var isRefreshing by remember { mutableStateOf(false) }
 
     BackHandler(enabled = true) {
         when {
@@ -375,6 +376,61 @@ private fun UserArea(
                 }
             }
         )
+    }
+
+    fun refreshHome() {
+        if (isRefreshing) return
+        isRefreshing = true
+        directoryError = ""
+        searchText = ""
+        searchHasFocus = false
+        focusManager.clearFocus(force = true)
+
+        var pending = 2
+        fun finishOne() {
+            pending -= 1
+            if (pending == 0) isRefreshing = false
+        }
+
+        db.collection("user_directory")
+            .orderBy("displayName", Query.Direction.ASCENDING)
+            .get(com.google.firebase.firestore.Source.SERVER)
+            .addOnSuccessListener { snapshot ->
+                directoryUsers = snapshot.documents.mapNotNull { doc ->
+                    val peerUid = doc.getString("uid") ?: doc.id
+                    if (peerUid == uid) return@mapNotNull null
+                    val name = doc.getString("displayName").orEmpty()
+                    if (name.isBlank()) return@mapNotNull null
+                    val photo = doc.getString("photoBase64").orEmpty()
+                    DirectoryUser(ChatPeer(peerUid, name, photo), photo)
+                }
+                directoryLoading = false
+                finishOne()
+            }
+            .addOnFailureListener { error ->
+                directoryError = error.localizedMessage ?: "Tidak dapat memuat daftar pengguna."
+                finishOne()
+            }
+
+        db.collection("conversations")
+            .whereArrayContains("members", uid)
+            .get(com.google.firebase.firestore.Source.SERVER)
+            .addOnSuccessListener { snapshot ->
+                conversationIds = snapshot.documents
+                    .filter { it.getString("lastMessage").orEmpty().isNotBlank() }
+                    .sortedByDescending { it.getTimestamp("updatedAt")?.toDate()?.time ?: 0L }
+                    .mapNotNull { doc ->
+                        (doc.get("members") as? List<*>)?.filterIsInstance<String>()?.firstOrNull { it != uid }
+                    }
+                conversationLoading = false
+                finishOne()
+            }
+            .addOnFailureListener { error ->
+                if (directoryError.isBlank()) {
+                    directoryError = error.localizedMessage ?: "Tidak dapat memuat percakapan."
+                }
+                finishOne()
+            }
     }
 
     DisposableEffect(db, uid) {
@@ -579,6 +635,20 @@ private fun UserArea(
                 Column(Modifier.weight(1f)) {
                     Text("BrushApp", color = Burgundy, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                     Text("Halo, $displayName!", color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                }
+                TextButton(
+                    onClick = { refreshHome() },
+                    enabled = !isRefreshing
+                ) {
+                    if (isRefreshing) {
+                        CircularProgressIndicator(
+                            Modifier.size(20.dp),
+                            color = Burgundy,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("⟳", color = Burgundy, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
                 TextButton(onClick = {
                     editedName = displayName
