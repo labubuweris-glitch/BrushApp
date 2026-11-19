@@ -514,6 +514,9 @@ private fun ChatThreadScreen(uid: String, chat: ChatItem, back: () -> Unit) {
     var sendAttempt by remember { mutableIntStateOf(0) }
     var finishedAttempt by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf("") }
+    var serverCheck by remember { mutableStateOf("") }
+    var checkingServer by remember { mutableStateOf(false) }
+
 
     LaunchedEffect(sendAttempt) {
         val attempt = sendAttempt
@@ -558,11 +561,27 @@ private fun ChatThreadScreen(uid: String, chat: ChatItem, back: () -> Unit) {
         Row(Modifier.fillMaxWidth().background(Panel).padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Text("‹", color = Accent, fontSize = 32.sp, modifier = Modifier.clickable(onClick = back).padding(horizontal = 10.dp))
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text("@${chat.otherUsername}", color = White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                 Text("Percakapan pribadi", color = Muted, fontSize = 12.sp)
             }
+            TextButton(onClick = {
+                checkingServer = true
+                serverCheck = "Memeriksa koneksi langsung ke server..."
+                db.collection("chats").document(chat.id).get(com.google.firebase.firestore.Source.SERVER)
+                    .addOnSuccessListener { doc ->
+                        checkingServer = false
+                        serverCheck = if (doc.exists()) "SERVER TERHUBUNG: dokumen chat berhasil dibaca langsung dari Firestore." else "SERVER TERHUBUNG, tetapi dokumen chat tidak ditemukan."
+                    }
+                    .addOnFailureListener { e ->
+                        checkingServer = false
+                        serverCheck = "TES SERVER GAGAL: ${e.localizedMessage ?: "tidak ada respons"}"
+                    }
+            }, enabled = !checkingServer) {
+                Text(if (checkingServer) "TES..." else "TES SERVER", color = Accent)
+            }
         }
+        if (serverCheck.isNotBlank()) Text(serverCheck, color = if (serverCheck.startsWith("TES SERVER GAGAL")) Color(0xFFFF8A80) else Accent, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
         if (error.isNotBlank()) Text(error, color = Color(0xFFFF8A80), modifier = Modifier.padding(12.dp))
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(14.dp)) {
             items(messages, key = { it.id }) { msg -> MessageBubble(msg, msg.senderId == uid) }
