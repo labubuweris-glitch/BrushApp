@@ -64,6 +64,9 @@ import com.google.firebase.messaging.FirebaseMessaging
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONObject
 
 private val Burgundy = Color(0xFF800020)
 private val Background = Color(0xFFFFFFFF)
@@ -688,11 +691,14 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
                         val batch = db.batch()
                         batch.set(messageRef, mapOf("senderUid" to currentUid, "text" to body, "createdAt" to FieldValue.serverTimestamp()))
                         batch.update(conversation, mapOf("lastMessage" to body, "lastSenderUid" to currentUid, "updatedAt" to FieldValue.serverTimestamp()))
-                        batch.commit().addOnSuccessListener { input = ""; sending = false }
-                            .addOnFailureListener { e ->
-                                sending = false
-                                error = "Pesan gagal dikirim: ${e.localizedMessage ?: "Kesalahan tidak diketahui"}"
-                            }
+                        batch.commit().addOnSuccessListener {
+                            input = ""
+                            sending = false
+                            sendWorkerNotification(id, messageRef.id)
+                        }.addOnFailureListener { e ->
+                            sending = false
+                            error = "Pesan gagal dikirim: ${e.localizedMessage ?: "Kesalahan tidak diketahui"}"
+                        }
                     }
                 },
                 enabled = input.trim().isNotEmpty() && !sending,
@@ -706,6 +712,45 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
     }
 }
 
+
+
+private fun sendWorkerNotification(conversationId: String, messageId: String) {
+    val user = FirebaseAuth.getInstance().currentUser ?: return
+    user.getIdToken(false)
+        .addOnSuccessListener { tokenResult ->
+            val idToken = tokenResult.token ?: return@addOnSuccessListener
+            Thread {
+                var connection: HttpURLConnection? = null
+                try {
+                    connection = (URL("https://brushapp-notification.rizwaye.workers.dev/").openConnection() as HttpURLConnection).apply {
+                        requestMethod = "POST"
+                        connectTimeout = 15000
+                        readTimeout = 20000
+                        doOutput = true
+                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    }
+                    val payload = JSONObject().apply {
+                        put("idToken", idToken)
+                        put("conversationId", conversationId)
+                        put("messageId", messageId)
+                    }.toString()
+                    connection.outputStream.use { output ->
+                        output.write(payload.toByteArray(Charsets.UTF_8))
+                    }
+                    val responseCode = connection.responseCode
+                    if (responseCode in 200..299) {
+                        connection.inputStream?.close()
+                    } else {
+                        connection.errorStream?.close()
+                    }
+                } catch (_: Exception) {
+                    // Pesan sudah tersimpan di Firestore; kegagalan notifikasi tidak membatalkan pesan.
+                } finally {
+                    connection?.disconnect()
+                }
+            }.start()
+        }
+}
 
 private fun saveFcmToken(uid: String, token: String) {
     val tokenId = MessageDigest.getInstance("SHA-256")
