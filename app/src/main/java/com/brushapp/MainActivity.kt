@@ -25,6 +25,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,13 +39,16 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 
 private val Burgundy = Color(0xFF800020)
 private val Background = Color(0xFFFFFFFF)
 private val TextDark = Color(0xFF252126)
 private val TextMuted = Color(0xFF777078)
+private val Success = Color(0xFF16803C)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,9 +86,8 @@ private fun BrushAppRoot() {
     if (currentUser == null) {
         AuthScreen(auth)
     } else {
-        FirestoreTestScreen(
-            email = currentUser?.email.orEmpty(),
-            uid = currentUser?.uid.orEmpty(),
+        UserArea(
+            user = currentUser!!,
             onSignOut = { auth.signOut() }
         )
     }
@@ -187,82 +190,200 @@ private fun AuthField(
 }
 
 @Composable
-private fun FirestoreTestScreen(email: String, uid: String, onSignOut: () -> Unit) {
-    var status by remember { mutableStateOf("Belum diuji. Tekan tombol di bawah untuk menguji Firestore.") }
-    var busy by remember { mutableStateOf(false) }
-    var readValue by remember { mutableStateOf("") }
+private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
+    val db = remember { FirebaseFirestore.getInstance() }
+    val uid = user.uid
+    val email = user.email.orEmpty()
+    var displayName by remember(uid) { mutableStateOf("") }
+    var loadingProfile by remember(uid) { mutableStateOf(true) }
+    var profileError by remember(uid) { mutableStateOf("") }
+    var savingProfile by remember { mutableStateOf(false) }
+    var searchEmail by remember { mutableStateOf("") }
+    var searching by remember { mutableStateOf(false) }
+    var searchMessage by remember { mutableStateOf("") }
+    var foundName by remember { mutableStateOf("") }
+    var foundEmail by remember { mutableStateOf("") }
+
+    LaunchedEffect(uid) {
+        loadingProfile = true
+        db.collection("users").document(uid).get()
+            .addOnSuccessListener { snapshot ->
+                displayName = snapshot.getString("displayName").orEmpty()
+                loadingProfile = false
+            }
+            .addOnFailureListener { error ->
+                profileError = "Gagal memuat profil: ${error.localizedMessage ?: "Kesalahan tidak diketahui"}"
+                loadingProfile = false
+            }
+    }
+
+    if (loadingProfile) {
+        Column(
+            modifier = Modifier.fillMaxSize().background(Background),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            CircularProgressIndicator(color = Burgundy)
+            Spacer(Modifier.height(12.dp))
+            Text("Memuat profil BrushApp...", color = TextMuted)
+        }
+        return
+    }
+
+    if (displayName.isBlank()) {
+        var nameInput by remember(uid) { mutableStateOf("") }
+        Column(
+            modifier = Modifier.fillMaxSize().background(Background).imePadding().padding(26.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text("BrushApp", color = Burgundy, fontSize = 38.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            Text("Buat profil kamu", color = TextDark, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Text("Nama ini akan ditampilkan saat akun kamu ditemukan oleh pengguna lain.", color = TextMuted)
+            Spacer(Modifier.height(22.dp))
+            OutlinedTextField(
+                value = nameInput,
+                onValueChange = { nameInput = it; profileError = "" },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Nama tampilan") },
+                singleLine = true,
+                shape = RoundedCornerShape(13.dp)
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(email, color = TextMuted, fontSize = 13.sp)
+            if (profileError.isNotBlank()) {
+                Spacer(Modifier.height(10.dp))
+                Text(profileError, color = Burgundy, fontSize = 13.sp)
+            }
+            Spacer(Modifier.height(18.dp))
+            Button(
+                onClick = {
+                    val cleanName = nameInput.trim()
+                    if (cleanName.length < 2) {
+                        profileError = "Nama minimal 2 karakter."
+                    } else if (cleanName.length > 30) {
+                        profileError = "Nama maksimal 30 karakter."
+                    } else {
+                        savingProfile = true
+                        val profileData = hashMapOf<String, Any>(
+                            "uid" to uid,
+                            "email" to email,
+                            "displayName" to cleanName,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                        val batch = db.batch()
+                        batch.set(db.collection("users").document(uid), profileData, SetOptions.merge())
+                        batch.set(db.collection("user_lookup").document(email.lowercase()), profileData, SetOptions.merge())
+                        batch.commit()
+                            .addOnSuccessListener {
+                                displayName = cleanName
+                                savingProfile = false
+                                profileError = ""
+                            }
+                            .addOnFailureListener { error ->
+                                savingProfile = false
+                                profileError = "Gagal menyimpan profil: ${error.localizedMessage ?: "Kesalahan tidak diketahui"}"
+                            }
+                    }
+                },
+                enabled = !savingProfile,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(13.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Burgundy, contentColor = Color.White)
+            ) {
+                if (savingProfile) CircularProgressIndicator(Modifier.height(21.dp), color = Color.White, strokeWidth = 2.dp)
+                else Text("SIMPAN PROFIL", fontWeight = FontWeight.Bold)
+            }
+            TextButton(onClick = onSignOut, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Text("Keluar akun", color = Burgundy)
+            }
+        }
+        return
+    }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(Background).padding(26.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier = Modifier.fillMaxSize().background(Background).imePadding().padding(26.dp),
+        verticalArrangement = Arrangement.Center
     ) {
         Text("BrushApp", color = Burgundy, fontSize = 38.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(12.dp))
-        Text("Login berhasil", color = TextDark, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        Text("Halo, $displayName!", color = TextDark, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
         Text(email, color = TextMuted, fontSize = 13.sp)
-        Spacer(Modifier.height(28.dp))
-        Text("UJI KONEKSI FIRESTORE", color = Burgundy, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(12.dp))
-        Text(
-            "Tes ini akan menyimpan satu dokumen khusus milik akun ini, lalu membacanya kembali.",
-            color = TextMuted, fontSize = 14.sp
+        Spacer(Modifier.height(30.dp))
+        Text("CARI PENGGUNA", color = Burgundy, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+        Text("Masukkan alamat email akun BrushApp yang ingin kamu cari.", color = TextMuted, fontSize = 14.sp)
+        Spacer(Modifier.height(14.dp))
+        OutlinedTextField(
+            value = searchEmail,
+            onValueChange = {
+                searchEmail = it
+                searchMessage = ""
+                foundName = ""
+                foundEmail = ""
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Email pengguna") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            shape = RoundedCornerShape(13.dp)
         )
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(12.dp))
         Button(
             onClick = {
-                busy = true
-                readValue = ""
-                status = "Mengirim data percobaan ke Firestore..."
-                val db = FirebaseFirestore.getInstance()
-                val testText = "BrushApp Firestore OK"
-                val document = db.collection("brushapp_test").document(uid)
-                val data = hashMapOf<String, Any>(
-                    "uid" to uid,
-                    "email" to email,
-                    "testMessage" to testText,
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-                document.set(data)
-                    .addOnSuccessListener {
-                        status = "TULIS BERHASIL. Sedang membaca kembali dokumen..."
-                        document.get()
+                val query = searchEmail.trim().lowercase()
+                when {
+                    query.isBlank() -> searchMessage = "Masukkan email yang ingin dicari."
+                    !android.util.Patterns.EMAIL_ADDRESS.matcher(query).matches() -> searchMessage = "Format email belum benar."
+                    query == email.lowercase() -> searchMessage = "Itu adalah akun kamu sendiri."
+                    else -> {
+                        searching = true
+                        searchMessage = "Mencari akun..."
+                        db.collection("user_lookup").document(query).get()
                             .addOnSuccessListener { snapshot ->
-                                busy = false
-                                if (snapshot.exists() && snapshot.getString("testMessage") == testText) {
-                                    readValue = snapshot.getString("testMessage").orEmpty()
-                                    status = "BERHASIL: data tersimpan dan berhasil dibaca kembali dari Firestore."
+                                searching = false
+                                if (snapshot.exists()) {
+                                    foundName = snapshot.getString("displayName").orEmpty()
+                                    foundEmail = snapshot.getString("email").orEmpty()
+                                    searchMessage = if (foundName.isNotBlank()) "Akun BrushApp ditemukan." else "Data akun tidak lengkap."
                                 } else {
-                                    status = "Dokumen terbaca, tetapi isi data tidak sesuai."
+                                    searchMessage = "Akun dengan email tersebut belum ditemukan."
                                 }
                             }
                             .addOnFailureListener { error ->
-                                busy = false
-                                status = "TULIS BERHASIL, tetapi BACA GAGAL: ${error.localizedMessage ?: "Kesalahan tidak diketahui"}"
+                                searching = false
+                                searchMessage = "Pencarian gagal: ${error.localizedMessage ?: "Kesalahan tidak diketahui"}"
                             }
                     }
-                    .addOnFailureListener { error ->
-                        busy = false
-                        status = "TULIS GAGAL: ${error.localizedMessage ?: "Kesalahan tidak diketahui"}"
-                    }
+                }
             },
-            enabled = !busy,
+            enabled = !searching,
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(13.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Burgundy, contentColor = Color.White)
         ) {
-            if (busy) CircularProgressIndicator(Modifier.height(21.dp), color = Color.White, strokeWidth = 2.dp)
-            else Text("MULAI TES FIRESTORE", fontWeight = FontWeight.Bold)
+            if (searching) CircularProgressIndicator(Modifier.height(21.dp), color = Color.White, strokeWidth = 2.dp)
+            else Text("CARI AKUN", fontWeight = FontWeight.Bold)
         }
-        Spacer(Modifier.height(18.dp))
-        Text(status, color = if (status.startsWith("BERHASIL")) Color(0xFF16803C) else Burgundy, fontSize = 14.sp)
-        if (readValue.isNotBlank()) {
-            Spacer(Modifier.height(8.dp))
-            Text("Data terbaca: $readValue", color = TextDark, fontWeight = FontWeight.SemiBold)
+        if (searchMessage.isNotBlank()) {
+            Spacer(Modifier.height(14.dp))
+            Text(
+                searchMessage,
+                color = if (searchMessage == "Akun BrushApp ditemukan.") Success else Burgundy,
+                fontSize = 14.sp
+            )
+        }
+        if (foundName.isNotBlank()) {
+            Spacer(Modifier.height(10.dp))
+            Text(foundName, color = TextDark, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(foundEmail, color = TextMuted, fontSize = 14.sp)
         }
         Spacer(Modifier.height(24.dp))
-        TextButton(onClick = onSignOut) { Text("Keluar akun", color = Burgundy) }
+        TextButton(onClick = onSignOut, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            Text("Keluar akun", color = Burgundy)
+        }
     }
 }
 
