@@ -5,9 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.pm.PackageManager
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
-import android.widget.Toast
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -718,39 +715,15 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
 
 
 private fun sendWorkerNotification(conversationId: String, messageId: String) {
-    val mainHandler = Handler(Looper.getMainLooper())
-    fun report(text: String) {
-        mainHandler.post {
-            Toast.makeText(FirebaseAuth.getInstance().app.applicationContext, text, Toast.LENGTH_LONG).show()
-        }
-    }
-    report("BrushApp: memulai pemeriksaan notifikasi.")
-    val user = FirebaseAuth.getInstance().currentUser
-    if (user == null) {
-        report("Notifikasi gagal: akun pengirim tidak terbaca.")
-        return
-    }
+    val user = FirebaseAuth.getInstance().currentUser ?: return
     user.getIdToken(false)
         .addOnSuccessListener { tokenResult ->
             val idToken = tokenResult.token
-            if (idToken.isNullOrBlank()) {
-                report("Notifikasi gagal: token login kosong.")
-                return@addOnSuccessListener
-            }
+            if (idToken.isNullOrBlank()) return@addOnSuccessListener
+
             Thread {
                 var connection: HttpURLConnection? = null
                 try {
-                    val health = (URL("https://brushapp-server.vercel.app/api/notify").openConnection() as HttpURLConnection).apply {
-                        requestMethod = "GET"
-                        setRequestProperty("User-Agent", "BrushApp-Android/1.0")
-                        connectTimeout = 10000
-                        readTimeout = 10000
-                    }
-                    val healthCode = health.responseCode
-                    val healthText = (if (healthCode in 200..299) health.inputStream else health.errorStream)
-                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
-                    health.disconnect()
-                    report("Server GET: HTTP $healthCode - " + healthText.take(70))
                     connection = (URL("https://brushapp-server.vercel.app/api/notify").openConnection() as HttpURLConnection).apply {
                         requestMethod = "POST"
                         setRequestProperty("User-Agent", "BrushApp-Android/1.0")
@@ -767,40 +740,19 @@ private fun sendWorkerNotification(conversationId: String, messageId: String) {
                     connection.outputStream.use { output ->
                         output.write(payload.toByteArray(Charsets.UTF_8))
                     }
-                    val responseCode = connection.responseCode
-                    val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
-                    val responseText = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                    val result = JSONObject(responseText)
-                    if (responseCode in 200..299) {
-                        val sent = result.optInt("sent", 0)
-                        val total = result.optInt("total", 0)
-                        if (sent > 0) report("FCM: berhasil diteruskan ke $sent dari $total token.")
-                        else {
-                            val failures = result.optJSONArray("failures")
-                            val detail = if (failures != null && failures.length() > 0) {
-                                failures.optJSONObject(0)?.optString("detail", "Ditolak FCM") ?: "Ditolak FCM"
-                            } else "Tidak ada token penerima."
-                            report("FCM gagal ($sent/$total): " + detail.take(180))
-                        }
-                    } else {
-                        report("Worker gagal ($responseCode): " + result.optString("error", responseText).take(180))
-                    }
-                } catch (e: Exception) {
-                    var cause: Throwable = e
-                    while (cause.cause != null && cause.cause !== cause) cause = cause.cause!!
-                    val errorType = cause.javaClass.simpleName
-                    val errorDetail = cause.message ?: e.message ?: "tanpa detail"
-                    report("Worker gagal [$errorType]: " + errorDetail.take(140))
+                    // Hasil notifikasi diproses tanpa Toast agar tidak mengganggu tampilan chat.
+                    connection.responseCode
+                } catch (_: Exception) {
+                    // Kegagalan notifikasi tidak mengganggu pengiriman dan penyimpanan pesan.
                 } finally {
                     connection?.disconnect()
                 }
             }.start()
         }
-        .addOnFailureListener { error ->
-            report("Gagal mengambil token login: " + (error.localizedMessage ?: "kesalahan Firebase").take(140))
+        .addOnFailureListener {
+            // Pengambilan token gagal; pesan chat tetap tersimpan di Firestore.
         }
 }
-
 private fun saveFcmToken(uid: String, token: String) {
     val tokenId = MessageDigest.getInstance("SHA-256")
         .digest(token.toByteArray(Charsets.UTF_8))
