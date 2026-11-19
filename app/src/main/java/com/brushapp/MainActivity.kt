@@ -5,6 +5,9 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -716,9 +719,19 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
 
 private fun sendWorkerNotification(conversationId: String, messageId: String) {
     val user = FirebaseAuth.getInstance().currentUser ?: return
+    val mainHandler = Handler(Looper.getMainLooper())
+    fun report(text: String) {
+        mainHandler.post {
+            Toast.makeText(FirebaseAuth.getInstance().app.applicationContext, text, Toast.LENGTH_LONG).show()
+        }
+    }
     user.getIdToken(false)
         .addOnSuccessListener { tokenResult ->
-            val idToken = tokenResult.token ?: return@addOnSuccessListener
+            val idToken = tokenResult.token
+            if (idToken.isNullOrBlank()) {
+                report("Notifikasi gagal: token login kosong.")
+                return@addOnSuccessListener
+            }
             Thread {
                 var connection: HttpURLConnection? = null
                 try {
@@ -738,17 +751,32 @@ private fun sendWorkerNotification(conversationId: String, messageId: String) {
                         output.write(payload.toByteArray(Charsets.UTF_8))
                     }
                     val responseCode = connection.responseCode
+                    val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+                    val responseText = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    val result = JSONObject(responseText)
                     if (responseCode in 200..299) {
-                        connection.inputStream?.close()
+                        val sent = result.optInt("sent", 0)
+                        val total = result.optInt("total", 0)
+                        if (sent > 0) report("FCM: berhasil diteruskan ke $sent dari $total token.")
+                        else {
+                            val failures = result.optJSONArray("failures")
+                            val detail = if (failures != null && failures.length() > 0) {
+                                failures.optJSONObject(0)?.optString("detail", "Ditolak FCM") ?: "Ditolak FCM"
+                            } else "Tidak ada token penerima."
+                            report("FCM gagal ($sent/$total): " + detail.take(180))
+                        }
                     } else {
-                        connection.errorStream?.close()
+                        report("Worker gagal ($responseCode): " + result.optString("error", responseText).take(180))
                     }
-                } catch (_: Exception) {
-                    // Pesan sudah tersimpan di Firestore; kegagalan notifikasi tidak membatalkan pesan.
+                } catch (e: Exception) {
+                    report("Gagal menghubungi Worker: " + (e.localizedMessage ?: "koneksi bermasalah").take(140))
                 } finally {
                     connection?.disconnect()
                 }
             }.start()
+        }
+        .addOnFailureListener { error ->
+            report("Gagal mengambil token login: " + (error.localizedMessage ?: "kesalahan Firebase").take(140))
         }
 }
 
