@@ -2,6 +2,9 @@ package com.brushapp
 
 import android.Manifest
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.pm.PackageManager
@@ -13,7 +16,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -289,9 +298,33 @@ private fun UserArea(
     val uid = user.uid
     val email = user.email.orEmpty()
     var displayName by remember(uid) { mutableStateOf("") }
+    var profilePhoto by remember(uid) { mutableStateOf("") }
+    var editingProfile by remember { mutableStateOf(false) }
+    var editedName by remember(uid) { mutableStateOf("") }
+    var editedPhoto by remember(uid) { mutableStateOf("") }
     var loadingProfile by remember(uid) { mutableStateOf(true) }
     var profileError by remember(uid) { mutableStateOf("") }
     var savingProfile by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            try {
+                val bitmap = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+                if (bitmap != null) {
+                    val scale = minOf(256f / bitmap.width, 256f / bitmap.height, 1f)
+                    val scaled = Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt().coerceAtLeast(1), (bitmap.height * scale).toInt().coerceAtLeast(1), true)
+                    val output = java.io.ByteArrayOutputStream()
+                    scaled.compress(Bitmap.CompressFormat.JPEG, 68, output)
+                    editedPhoto = Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+                    if (scaled !== bitmap) scaled.recycle()
+                    bitmap.recycle()
+                    profileError = ""
+                } else profileError = "Foto tidak dapat dibaca."
+            } catch (_: Exception) {
+                profileError = "Gagal memproses foto. Coba foto lain."
+            }
+        }
+    }
     var searchText by remember { mutableStateOf("") }
     var directoryUsers by remember(uid) { mutableStateOf<List<DirectoryUser>>(emptyList()) }
     var directoryLoading by remember(uid) { mutableStateOf(true) }
@@ -315,7 +348,7 @@ private fun UserArea(
                         if (peerUid == uid) return@mapNotNull null
                         val name = doc.getString("displayName").orEmpty()
                         if (name.isBlank()) return@mapNotNull null
-                        DirectoryUser(ChatPeer(peerUid, name))
+                        DirectoryUser(ChatPeer(peerUid, name), doc.getString("photoBase64").orEmpty())
                     }
                     directoryError = ""
                     directoryLoading = false
@@ -345,10 +378,14 @@ private fun UserArea(
         db.collection("users").document(uid).get()
             .addOnSuccessListener { snapshot ->
                 displayName = snapshot.getString("displayName").orEmpty()
+                profilePhoto = snapshot.getString("photoBase64").orEmpty()
+                editedName = displayName
+                editedPhoto = profilePhoto
                 if (displayName.isNotBlank()) {
                     val directoryData = mapOf(
                         "uid" to uid,
                         "displayName" to displayName,
+                        "photoBase64" to profilePhoto,
                         "email" to FieldValue.delete(),
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
@@ -471,13 +508,81 @@ private fun UserArea(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(Modifier.weight(1f)) {
-                Text("BrushApp", color = Burgundy, fontSize = 32.sp, fontWeight = FontWeight.Bold)
-                Text("Halo, $displayName!", color = TextDark, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                ProfileAvatar(profilePhoto, 48.dp)
+                Column(Modifier.padding(start = 10.dp)) {
+                    Text("BrushApp", color = Burgundy, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    Text("Halo, $displayName!", color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
+            TextButton(onClick = {
+                editedName = displayName
+                editedPhoto = profilePhoto
+                editingProfile = !editingProfile
+                profileError = ""
+            }) { Text("PROFIL", color = Burgundy, fontWeight = FontWeight.Bold) }
             TextButton(onClick = onSignOut) {
                 Text("KELUAR", color = Burgundy, fontWeight = FontWeight.Bold)
             }
+        }
+        if (editingProfile) {
+            Column(Modifier.fillMaxWidth().background(Color(0xFFFFF8FA), RoundedCornerShape(14.dp)).padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ProfileAvatar(editedPhoto, 68.dp)
+                    Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                        Text("FOTO PROFIL", color = TextDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        TextButton(onClick = { photoPicker.launch("image/*") }) {
+                            Text("PILIH DARI GALERI", color = Burgundy)
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = editedName,
+                    onValueChange = { editedName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Nama pengguna") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp)
+                )
+                if (profileError.isNotBlank()) Text(profileError, color = Burgundy, fontSize = 12.sp)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { editingProfile = false; profileError = "" }) {
+                        Text("BATAL", color = TextMuted)
+                    }
+                    TextButton(enabled = !savingProfile, onClick = {
+                        val cleanName = editedName.trim()
+                        when {
+                            cleanName.length < 2 -> profileError = "Nama minimal 2 karakter."
+                            cleanName.length > 30 -> profileError = "Nama maksimal 30 karakter."
+                            else -> {
+                                savingProfile = true
+                                val profileData = mapOf(
+                                    "uid" to uid,
+                                    "displayName" to cleanName,
+                                    "photoBase64" to editedPhoto,
+                                    "updatedAt" to FieldValue.serverTimestamp()
+                                )
+                                val batch = db.batch()
+                                batch.set(db.collection("users").document(uid), profileData, SetOptions.merge())
+                                batch.set(db.collection("user_directory").document(uid), profileData, SetOptions.merge())
+                                batch.commit().addOnSuccessListener {
+                                    displayName = cleanName
+                                    profilePhoto = editedPhoto
+                                    savingProfile = false
+                                    editingProfile = false
+                                    profileError = ""
+                                }.addOnFailureListener { e ->
+                                    savingProfile = false
+                                    profileError = "Gagal menyimpan profil: ${e.localizedMessage ?: "Coba lagi."}"
+                                }
+                            }
+                        }
+                    }) {
+                        Text(if (savingProfile) "MENYIMPAN..." else "SIMPAN", color = Burgundy, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
         }
         Spacer(Modifier.height(18.dp))
         Text("DAFTAR PENGGUNA", color = Burgundy, fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -561,7 +666,8 @@ private fun UserArea(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(Modifier.weight(1f)) {
+                                ProfileAvatar(item.photoBase64, 42.dp)
+                                Column(Modifier.weight(1f).padding(start = 10.dp)) {
                                     Text(item.peer.name, color = TextDark, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                                 }
                                 if (openingPeerUid == item.peer.uid) {
@@ -592,8 +698,36 @@ private fun friendlyAuthError(error: Exception?): String {
 
 
 private data class ChatPeer(val uid: String, val name: String)
-private data class DirectoryUser(val peer: ChatPeer)
+private data class DirectoryUser(val peer: ChatPeer, val photoBase64: String = "")
 private data class ChatMessage(val id: String, val senderUid: String, val text: String, val createdAt: Timestamp?)
+
+@Composable
+private fun ProfileAvatar(photoBase64: String, diameter: androidx.compose.ui.unit.Dp) {
+    val bitmap = remember(photoBase64) {
+        try {
+            if (photoBase64.isBlank()) null
+            else {
+                val bytes = Base64.decode(photoBase64, Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            }
+        } catch (_: Exception) { null }
+    }
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = "Foto profil",
+            modifier = Modifier.size(diameter).clip(RoundedCornerShape(50)),
+            contentScale = ContentScale.Crop
+        )
+    } else {
+        Box(
+            modifier = Modifier.size(diameter).clip(RoundedCornerShape(50)).background(Color(0xFFF1E3E9)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("B", color = Burgundy, fontWeight = FontWeight.Bold, fontSize = (diameter.value * 0.42f).sp)
+        }
+    }
+}
 
 private fun formatMessageTime(timestamp: Timestamp?): String {
     if (timestamp == null) return ""
