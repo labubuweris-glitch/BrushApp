@@ -718,12 +718,17 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
 
 
 private fun sendWorkerNotification(conversationId: String, messageId: String) {
-    val user = FirebaseAuth.getInstance().currentUser ?: return
     val mainHandler = Handler(Looper.getMainLooper())
     fun report(text: String) {
         mainHandler.post {
             Toast.makeText(FirebaseAuth.getInstance().app.applicationContext, text, Toast.LENGTH_LONG).show()
         }
+    }
+    report("BrushApp: memulai pemeriksaan notifikasi.")
+    val user = FirebaseAuth.getInstance().currentUser
+    if (user == null) {
+        report("Notifikasi gagal: akun pengirim tidak terbaca.")
+        return
     }
     user.getIdToken(false)
         .addOnSuccessListener { tokenResult ->
