@@ -29,12 +29,15 @@ service cloud.firestore {
       allow create, update: if request.auth != null
                             && request.auth.uid == userId
                             && request.resource.data.keys().hasOnly([
-                              'uid', 'displayName', 'updatedAt'
+                              'uid', 'displayName', 'photoBase64', 'updatedAt'
                             ])
                             && request.resource.data.uid == request.auth.uid
                             && request.resource.data.displayName is string
                             && request.resource.data.displayName.size() >= 2
-                            && request.resource.data.displayName.size() <= 30;
+                            && request.resource.data.displayName.size() <= 30
+                            && (!request.resource.data.keys().hasAny(['photoBase64'])
+                                || (request.resource.data.photoBase64 is string
+                                    && request.resource.data.photoBase64.size() <= 300000));
 
       allow delete: if false;
     }
