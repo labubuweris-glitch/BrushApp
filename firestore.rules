@@ -52,7 +52,13 @@ service cloud.firestore {
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 4000;
-        allow update, delete: if false;
+        // Penerima boleh mengubah readAt saja untuk menandai pesan telah dibaca.
+        allow update: if isChatMember(chatId)
+          && resource.data.senderId != request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
+          && request.resource.data.readAt is timestamp
+          && (!('readAt' in resource.data) || resource.data.readAt == null);
+        allow delete: if false;
       }
     }
   }
