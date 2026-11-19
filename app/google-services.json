@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "701765953469",
+    "project_id": "brushapp-b1aef",
+    "storage_bucket": "brushapp-b1aef.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:701765953469:android:26fea9437343b3c34354d4",
+        "android_client_info": {
+          "package_name": "com.brushapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyASdhOUvlF7sC40sb2_rxuC8wIkHYHbB1I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
