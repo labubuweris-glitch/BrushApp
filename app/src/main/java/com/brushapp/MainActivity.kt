@@ -329,6 +329,8 @@ private fun UserArea(
     var directoryUsers by remember(uid) { mutableStateOf<List<DirectoryUser>>(emptyList()) }
     var directoryLoading by remember(uid) { mutableStateOf(true) }
     var directoryError by remember(uid) { mutableStateOf("") }
+    var conversationIds by remember(uid) { mutableStateOf<List<String>>(emptyList()) }
+    var conversationLoading by remember(uid) { mutableStateOf(true) }
     var selectedPeer by remember { mutableStateOf<ChatPeer?>(null) }
     var openingPeerUid by remember { mutableStateOf("") }
 
@@ -353,6 +355,27 @@ private fun UserArea(
                     }
                     directoryError = ""
                     directoryLoading = false
+                }
+            }
+        onDispose { listener.remove() }
+    }
+
+    DisposableEffect(db, uid) {
+        conversationLoading = true
+        val listener = db.collection("conversations")
+            .whereArrayContains("members", uid)
+            .addSnapshotListener { snapshot, exception ->
+                if (exception != null) {
+                    directoryError = exception.localizedMessage ?: "Tidak dapat memuat percakapan."
+                    conversationLoading = false
+                } else if (snapshot != null) {
+                    conversationIds = snapshot.documents
+                        .filter { it.getString("lastMessage").orEmpty().isNotBlank() }
+                        .sortedByDescending { it.getTimestamp("updatedAt")?.toDate()?.time ?: 0L }
+                        .mapNotNull { doc ->
+                            (doc.get("members") as? List<*>)?.filterIsInstance<String>()?.firstOrNull { it != uid }
+                        }
+                    conversationLoading = false
                 }
             }
         onDispose { listener.remove() }
@@ -497,8 +520,10 @@ private fun UserArea(
     }
 
     val filteredUsers = directoryUsers.filter { item ->
-        val q = searchText.trim().lowercase()
-        q.isBlank() || item.peer.name.lowercase().contains(q)
+        searchText.trim().isNotBlank() && item.peer.name.contains(searchText.trim(), ignoreCase = true)
+    }
+    val chatUsers = conversationIds.mapNotNull { peerUid ->
+        directoryUsers.firstOrNull { it.peer.uid == peerUid }?.peer
     }
 
     Column(
@@ -596,15 +621,13 @@ private fun UserArea(
             }
         } else {
         Spacer(Modifier.height(18.dp))
-        Text("DAFTAR PENGGUNA", color = Burgundy, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(5.dp))
-        Text("Pilih orang untuk mulai mengobrol.", color = TextMuted, fontSize = 13.sp)
+        Text(if (searchText.isBlank()) "CHAT" else "HASIL PENCARIAN", color = Burgundy, fontSize = 16.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(
             value = searchText,
             onValueChange = { searchText = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Cari nama pengguna") },
+            label = { Text("Cari pengguna BrushApp") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
             shape = RoundedCornerShape(13.dp),
@@ -616,42 +639,41 @@ private fun UserArea(
             )
         )
         Spacer(Modifier.height(10.dp))
+        val showUsers = searchText.isNotBlank()
+        val shownUsers = if (showUsers) filteredUsers else chatUsers.map { peer ->
+            directoryUsers.firstOrNull { it.peer.uid == peer.uid } ?: DirectoryUser(peer, peer.photoBase64)
+        }
         when {
-            directoryLoading -> {
-                Column(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
+            showUsers && directoryLoading -> {
+                Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = Burgundy)
                     Spacer(Modifier.height(10.dp))
-                    Text("Memuat daftar pengguna...", color = TextMuted)
+                    Text("Mencari pengguna...", color = TextMuted)
+                }
+            }
+            !showUsers && conversationLoading -> {
+                Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Burgundy)
+                    Spacer(Modifier.height(10.dp))
+                    Text("Memuat chat...", color = TextMuted)
                 }
             }
             directoryError.isNotBlank() -> {
-                Column(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("Gagal memuat pengguna: $directoryError", color = Burgundy, fontSize = 13.sp)
+                Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Gagal memuat: $directoryError", color = Burgundy, fontSize = 13.sp)
                 }
             }
-            filteredUsers.isEmpty() -> {
-                Column(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
+            shownUsers.isEmpty() -> {
+                Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        if (directoryUsers.isEmpty()) "Belum ada pengguna lain yang terdaftar."
-                        else "Pengguna tidak ditemukan.",
+                        if (showUsers) "Pengguna tidak ditemukan."
+                        else "Belum ada percakapan.",
                         color = TextMuted,
                         fontSize = 14.sp
                     )
-                    if (directoryUsers.isEmpty()) {
+                    if (!showUsers) {
                         Spacer(Modifier.height(6.dp))
-                        Text("Minta teman masuk ke BrushApp sekali agar muncul di daftar.", color = TextMuted, fontSize = 12.sp)
+                        Text("Cari teman untuk memulai chat.", color = TextMuted, fontSize = 12.sp)
                     }
                 }
             }
@@ -660,7 +682,7 @@ private fun UserArea(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    items(filteredUsers, key = { it.peer.uid }) { item ->
+                    items(shownUsers, key = { it.peer.uid }) { item ->
                         TextButton(
                             onClick = {
                                 openingPeerUid = item.peer.uid
@@ -683,7 +705,7 @@ private fun UserArea(
                                 }
                                 if (openingPeerUid == item.peer.uid) {
                                     CircularProgressIndicator(Modifier.height(20.dp), color = Burgundy, strokeWidth = 2.dp)
-                                } else {
+                                } else if (showUsers) {
                                     Text("CHAT  ›", color = Burgundy, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
@@ -691,6 +713,7 @@ private fun UserArea(
                     }
                 }
             }
+        }
         }
         }
     }
