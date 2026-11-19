@@ -82,6 +82,7 @@ private const val MESSAGE_CHANNEL_ID = "brushapp_messages"
 class MainActivity : ComponentActivity() {
     private var notificationPeerUid by mutableStateOf("")
     private var notificationPeerName by mutableStateOf("")
+    private var notificationRequestId by mutableStateOf(0L)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -98,7 +99,7 @@ class MainActivity : ComponentActivity() {
                     onSurface = TextDark
                 )
             ) {
-                BrushAppRoot(notificationPeerUid, notificationPeerName)
+                BrushAppRoot(notificationPeerUid, notificationPeerName, notificationRequestId)
             }
         }
     }
@@ -112,6 +113,7 @@ class MainActivity : ComponentActivity() {
     private fun readNotificationIntent(intent: Intent?) {
         notificationPeerUid = intent?.getStringExtra("notification_peer_uid").orEmpty()
         notificationPeerName = intent?.getStringExtra("notification_peer_name").orEmpty()
+        notificationRequestId = System.currentTimeMillis()
     }
 
     private fun createMessageNotificationChannel() {
@@ -130,7 +132,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun BrushAppRoot(notificationPeerUid: String, notificationPeerName: String) {
+private fun BrushAppRoot(notificationPeerUid: String, notificationPeerName: String, notificationRequestId: Long) {
     val auth = remember { FirebaseAuth.getInstance() }
     val context = androidx.compose.ui.platform.LocalContext.current
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -173,6 +175,7 @@ private fun BrushAppRoot(notificationPeerUid: String, notificationPeerName: Stri
             user = currentUser!!,
             notificationPeerUid = notificationPeerUid,
             notificationPeerName = notificationPeerName,
+            notificationRequestId = notificationRequestId,
             onSignOut = { auth.signOut() }
         )
     }
@@ -279,6 +282,7 @@ private fun UserArea(
     user: FirebaseUser,
     notificationPeerUid: String,
     notificationPeerName: String,
+    notificationRequestId: Long,
     onSignOut: () -> Unit
 ) {
     val db = remember { FirebaseFirestore.getInstance() }
@@ -320,8 +324,8 @@ private fun UserArea(
         onDispose { listener.remove() }
     }
 
-    LaunchedEffect(notificationPeerUid, directoryUsers, directoryLoading, loadingProfile) {
-        if (notificationPeerUid.isNotBlank() && !directoryLoading && !loadingProfile && selectedPeer == null) {
+    LaunchedEffect(notificationRequestId, notificationPeerUid, directoryUsers, directoryLoading, loadingProfile) {
+        if (notificationPeerUid.isNotBlank() && !directoryLoading && !loadingProfile) {
             val peer = directoryUsers.firstOrNull { it.peer.uid == notificationPeerUid }?.peer
             if (peer != null) {
                 openingPeerUid = peer.uid
