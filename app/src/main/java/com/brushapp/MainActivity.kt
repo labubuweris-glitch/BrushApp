@@ -546,16 +546,29 @@ private fun ChatThreadScreen(uid: String, chat: ChatItem, back: () -> Unit) {
                         sending = true
                         val chatRef = db.collection("chats").document(chat.id)
                         val msgRef = chatRef.collection("messages").document()
-                        val batch = db.batch()
-                        batch.set(msgRef, mapOf(
+                        // Simpan pesan secara mandiri agar kegagalan memperbarui ringkasan chat
+                        // tidak membatalkan pesan yang sedang dikirim.
+                        msgRef.set(mapOf(
                             "senderId" to uid,
                             "text" to text,
                             "createdAt" to FieldValue.serverTimestamp(),
                             "readAt" to null
-                        ))
-                        batch.update(chatRef, mapOf("lastMessage" to text, "updatedAt" to FieldValue.serverTimestamp()))
-                        batch.commit().addOnSuccessListener { input = ""; sending = false }
-                            .addOnFailureListener { e -> error = e.localizedMessage ?: "Pesan gagal dikirim."; sending = false }
+                        )).addOnSuccessListener {
+                            input = ""
+                            sending = false
+                            error = ""
+                            // Ringkasan percakapan diperbarui terpisah; kegagalannya
+                            // tidak boleh membuat pesan dianggap gagal.
+                            chatRef.update(
+                                "lastMessage", text,
+                                "updatedAt", FieldValue.serverTimestamp()
+                            ).addOnFailureListener { e ->
+                                error = "Pesan tersimpan, tetapi daftar chat belum diperbarui: ${e.localizedMessage ?: "coba lagi nanti"}"
+                            }
+                        }.addOnFailureListener { e ->
+                            error = "Pesan gagal disimpan: ${e.localizedMessage ?: "periksa koneksi dan izin Firestore"}"
+                            sending = false
+                        }
                     }
                 },
                 enabled = input.trim().isNotEmpty() && !sending,
