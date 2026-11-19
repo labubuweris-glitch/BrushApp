@@ -207,41 +207,34 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
     var loadingProfile by remember(uid) { mutableStateOf(true) }
     var profileError by remember(uid) { mutableStateOf("") }
     var savingProfile by remember { mutableStateOf(false) }
-    var searchEmail by remember { mutableStateOf("") }
-    var searching by remember { mutableStateOf(false) }
-    var searchMessage by remember { mutableStateOf("") }
-    var foundName by remember { mutableStateOf("") }
-    var foundEmail by remember { mutableStateOf("") }
-    var foundUid by remember { mutableStateOf("") }
+    var searchText by remember { mutableStateOf("") }
+    var directoryUsers by remember(uid) { mutableStateOf<List<DirectoryUser>>(emptyList()) }
+    var directoryLoading by remember(uid) { mutableStateOf(true) }
+    var directoryError by remember(uid) { mutableStateOf("") }
     var selectedPeer by remember { mutableStateOf<ChatPeer?>(null) }
-    var openingChat by remember { mutableStateOf(false) }
-    var recentChats by remember(uid) { mutableStateOf<List<ChatPreview>>(emptyList()) }
-    var recentChatsError by remember(uid) { mutableStateOf("") }
+    var openingPeerUid by remember { mutableStateOf("") }
 
     BackHandler(enabled = selectedPeer != null) { selectedPeer = null }
 
     DisposableEffect(db, uid) {
-        val listener = db.collection("conversations")
-            .whereArrayContains("members", uid)
+        directoryLoading = true
+        val listener = db.collection("user_directory")
+            .orderBy("displayName", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, exception ->
                 if (exception != null) {
-                    recentChatsError = exception.localizedMessage ?: "Tidak dapat memuat daftar chat."
+                    directoryError = exception.localizedMessage ?: "Tidak dapat memuat daftar pengguna."
+                    directoryLoading = false
                 } else if (snapshot != null) {
-                    recentChats = snapshot.documents.mapNotNull { doc ->
-                        val members = doc.get("members") as? List<*> ?: return@mapNotNull null
-                        val peerUid = members.filterIsInstance<String>().firstOrNull { it != uid }
-                            ?: return@mapNotNull null
-                        val memberInfo = doc.get("memberInfo") as? Map<*, *>
-                        val peerInfo = memberInfo?.get(peerUid) as? Map<*, *>
-                        val peerName = peerInfo?.get("displayName") as? String ?: "Pengguna BrushApp"
-                        val peerEmail = peerInfo?.get("email") as? String ?: ""
-                        ChatPreview(
-                            peer = ChatPeer(peerUid, peerName, peerEmail),
-                            lastMessage = doc.getString("lastMessage").orEmpty(),
-                            updatedAt = doc.getTimestamp("updatedAt")?.toDate()?.time ?: 0L
-                        )
-                    }.sortedByDescending { it.updatedAt }
-                    recentChatsError = ""
+                    directoryUsers = snapshot.documents.mapNotNull { doc ->
+                        val peerUid = doc.getString("uid") ?: doc.id
+                        if (peerUid == uid) return@mapNotNull null
+                        val name = doc.getString("displayName").orEmpty()
+                        val peerEmail = doc.getString("email").orEmpty()
+                        if (name.isBlank() || peerEmail.isBlank()) return@mapNotNull null
+                        DirectoryUser(ChatPeer(peerUid, name, peerEmail))
+                    }
+                    directoryError = ""
+                    directoryLoading = false
                 }
             }
         onDispose { listener.remove() }
@@ -252,6 +245,16 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
         db.collection("users").document(uid).get()
             .addOnSuccessListener { snapshot ->
                 displayName = snapshot.getString("displayName").orEmpty()
+                if (displayName.isNotBlank()) {
+                    val directoryData = mapOf(
+                        "uid" to uid,
+                        "email" to email,
+                        "displayName" to displayName,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                    db.collection("user_directory").document(uid)
+                        .set(directoryData, SetOptions.merge())
+                }
                 loadingProfile = false
             }
             .addOnFailureListener { error ->
@@ -323,6 +326,7 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
                         val batch = db.batch()
                         batch.set(db.collection("users").document(uid), profileData, SetOptions.merge())
                         batch.set(db.collection("user_lookup").document(email.lowercase()), profileData, SetOptions.merge())
+                        batch.set(db.collection("user_directory").document(uid), profileData, SetOptions.merge())
                         batch.commit()
                             .addOnSuccessListener {
                                 displayName = cleanName
@@ -350,140 +354,123 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
         return
     }
 
+    val filteredUsers = directoryUsers.filter { item ->
+        val q = searchText.trim().lowercase()
+        q.isBlank() || item.peer.name.lowercase().contains(q) || item.peer.email.lowercase().contains(q)
+    }
+
     Column(
-        modifier = Modifier.fillMaxSize().background(Background).imePadding().padding(22.dp),
+        modifier = Modifier.fillMaxSize().background(Background).imePadding().padding(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.Top
     ) {
-        Text("BrushApp", color = Burgundy, fontSize = 34.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(5.dp))
-        Text("Halo, $displayName!", color = TextDark, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(6.dp))
-        Text(email, color = TextMuted, fontSize = 13.sp)
-        Spacer(Modifier.height(30.dp))
-        Text("CARI PENGGUNA", color = Burgundy, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        Text("Masukkan alamat email akun BrushApp yang ingin kamu cari.", color = TextMuted, fontSize = 14.sp)
-        Spacer(Modifier.height(14.dp))
-        OutlinedTextField(
-            value = searchEmail,
-            onValueChange = {
-                searchEmail = it
-                searchMessage = ""
-                foundName = ""
-                foundEmail = ""
-                foundUid = ""
-            },
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Email pengguna") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-            shape = RoundedCornerShape(13.dp)
-        )
-        Spacer(Modifier.height(12.dp))
-        Button(
-            onClick = {
-                val query = searchEmail.trim().lowercase()
-                when {
-                    query.isBlank() -> searchMessage = "Masukkan email yang ingin dicari."
-                    !android.util.Patterns.EMAIL_ADDRESS.matcher(query).matches() -> searchMessage = "Format email belum benar."
-                    query == email.lowercase() -> searchMessage = "Itu adalah akun kamu sendiri."
-                    else -> {
-                        searching = true
-                        searchMessage = "Mencari akun..."
-                        db.collection("user_lookup").document(query).get()
-                            .addOnSuccessListener { snapshot ->
-                                searching = false
-                                if (snapshot.exists()) {
-                                    foundName = snapshot.getString("displayName").orEmpty()
-                                    foundEmail = snapshot.getString("email").orEmpty()
-                                    foundUid = snapshot.getString("uid").orEmpty()
-                                    searchMessage = if (foundName.isNotBlank() && foundUid.isNotBlank()) "Akun BrushApp ditemukan." else "Data akun tidak lengkap."
-                                } else {
-                                    searchMessage = "Akun dengan email tersebut belum ditemukan."
-                                }
-                            }
-                            .addOnFailureListener { error ->
-                                searching = false
-                                searchMessage = "Pencarian gagal: ${error.localizedMessage ?: "Kesalahan tidak diketahui"}"
-                            }
-                    }
-                }
-            },
-            enabled = !searching,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(13.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Burgundy, contentColor = Color.White)
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (searching) CircularProgressIndicator(Modifier.height(21.dp), color = Color.White, strokeWidth = 2.dp)
-            else Text("CARI AKUN", fontWeight = FontWeight.Bold)
-        }
-        if (searchMessage.isNotBlank()) {
-            Spacer(Modifier.height(14.dp))
-            Text(
-                searchMessage,
-                color = if (searchMessage == "Akun BrushApp ditemukan.") Success else Burgundy,
-                fontSize = 14.sp
-            )
-        }
-        if (foundName.isNotBlank() && foundUid.isNotBlank()) {
-            Spacer(Modifier.height(10.dp))
-            Text(foundName, color = TextDark, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Text(foundEmail, color = TextMuted, fontSize = 14.sp)
-            Spacer(Modifier.height(10.dp))
-            Button(
-                onClick = {
-                    val peer = ChatPeer(foundUid, foundName, foundEmail)
-                    openingChat = true
-                    openConversation(db, uid, displayName, email, peer) { error ->
-                        openingChat = false
-                        if (error == null) selectedPeer = peer
-                        else searchMessage = "Gagal membuka chat: $error"
-                    }
-                },
-                enabled = !openingChat,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Burgundy)
-            ) {
-                if (openingChat) CircularProgressIndicator(Modifier.height(20.dp), color = Color.White, strokeWidth = 2.dp)
-                else Text("BUKA CHAT")
+            Column(Modifier.weight(1f)) {
+                Text("BrushApp", color = Burgundy, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                Text("Halo, $displayName!", color = TextDark, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            }
+            TextButton(onClick = onSignOut) {
+                Text("KELUAR", color = Burgundy, fontWeight = FontWeight.Bold)
             }
         }
         Spacer(Modifier.height(18.dp))
-        Text("CHAT TERAKHIR", color = Burgundy, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(6.dp))
-        if (recentChatsError.isNotBlank()) {
-            Text("Gagal memuat chat: $recentChatsError", color = Burgundy, fontSize = 12.sp)
-        }
-        if (recentChats.isEmpty()) {
-            Text("Belum ada percakapan. Cari email pengguna untuk memulai chat.", color = TextMuted, fontSize = 13.sp)
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                items(recentChats, key = { it.peer.uid }) { item ->
-                    TextButton(
-                        onClick = { selectedPeer = item.peer },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(Modifier.fillMaxWidth()) {
-                            Text(item.peer.name, color = TextDark, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                item.lastMessage.ifBlank { "Mulai percakapan" },
-                                color = TextMuted,
-                                fontSize = 13.sp,
-                                maxLines = 1
-                            )
-                            if (item.peer.email.isNotBlank()) {
-                                Text(item.peer.email, color = TextMuted, fontSize = 10.sp, maxLines = 1)
+        Text("DAFTAR PENGGUNA", color = Burgundy, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(5.dp))
+        Text("Pilih orang untuk mulai mengobrol.", color = TextMuted, fontSize = 13.sp)
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = searchText,
+            onValueChange = { searchText = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Cari nama atau email") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+            shape = RoundedCornerShape(13.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Burgundy,
+                focusedLabelColor = Burgundy,
+                cursorColor = Burgundy,
+                unfocusedBorderColor = Color(0xFFD8D2D6)
+            )
+        )
+        Spacer(Modifier.height(10.dp))
+        when {
+            directoryLoading -> {
+                Column(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator(color = Burgundy)
+                    Spacer(Modifier.height(10.dp))
+                    Text("Memuat daftar pengguna...", color = TextMuted)
+                }
+            }
+            directoryError.isNotBlank() -> {
+                Column(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Gagal memuat pengguna: $directoryError", color = Burgundy, fontSize = 13.sp)
+                }
+            }
+            filteredUsers.isEmpty() -> {
+                Column(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        if (directoryUsers.isEmpty()) "Belum ada pengguna lain yang terdaftar."
+                        else "Pengguna tidak ditemukan.",
+                        color = TextMuted,
+                        fontSize = 14.sp
+                    )
+                    if (directoryUsers.isEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text("Minta teman masuk ke BrushApp sekali agar muncul di daftar.", color = TextMuted, fontSize = 12.sp)
+                    }
+                }
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    items(filteredUsers, key = { it.peer.uid }) { item ->
+                        TextButton(
+                            onClick = {
+                                openingPeerUid = item.peer.uid
+                                openConversation(db, uid, displayName, email, item.peer) { error ->
+                                    openingPeerUid = ""
+                                    if (error == null) selectedPeer = item.peer
+                                    else directoryError = "Gagal membuka chat: $error"
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = openingPeerUid.isBlank() || openingPeerUid == item.peer.uid
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(item.peer.name, color = TextDark, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(item.peer.email, color = TextMuted, fontSize = 12.sp)
+                                }
+                                if (openingPeerUid == item.peer.uid) {
+                                    CircularProgressIndicator(Modifier.height(20.dp), color = Burgundy, strokeWidth = 2.dp)
+                                } else {
+                                    Text("CHAT  ›", color = Burgundy, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
                 }
             }
-        }
-        TextButton(onClick = onSignOut, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-            Text("Keluar akun", color = Burgundy)
         }
     }
 }
@@ -502,7 +489,7 @@ private fun friendlyAuthError(error: Exception?): String {
 
 
 private data class ChatPeer(val uid: String, val name: String, val email: String)
-private data class ChatPreview(val peer: ChatPeer, val lastMessage: String, val updatedAt: Long)
+private data class DirectoryUser(val peer: ChatPeer)
 private data class ChatMessage(val id: String, val senderUid: String, val text: String)
 
 private fun conversationId(firstUid: String, secondUid: String): String {
