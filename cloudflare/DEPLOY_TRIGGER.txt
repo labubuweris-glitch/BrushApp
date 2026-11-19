@@ -1,0 +1,1 @@
+Trigger a Cloudflare Workers Build after correcting the root directory to cloudflare.
