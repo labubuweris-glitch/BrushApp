@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -64,6 +65,7 @@ import com.google.firebase.messaging.FirebaseMessaging
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.Calendar
 import java.net.HttpURLConnection
 import java.net.URL
 import org.json.JSONObject
@@ -555,6 +557,26 @@ private fun formatMessageTime(timestamp: Timestamp?): String {
     return SimpleDateFormat("HH.mm", Locale.getDefault()).format(timestamp.toDate())
 }
 
+private fun messageDateKey(timestamp: Timestamp?): String? {
+    if (timestamp == null) return null
+    return SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(timestamp.toDate())
+}
+
+private fun formatMessageDate(timestamp: Timestamp): String {
+    val target = Calendar.getInstance().apply { time = timestamp.toDate() }
+    val today = Calendar.getInstance()
+    val yesterday = (today.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
+
+    return when {
+        target.get(Calendar.YEAR) == today.get(Calendar.YEAR) &&
+            target.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR) -> "HARI INI"
+        target.get(Calendar.YEAR) == yesterday.get(Calendar.YEAR) &&
+            target.get(Calendar.DAY_OF_YEAR) == yesterday.get(Calendar.DAY_OF_YEAR) -> "KEMARIN"
+        else -> SimpleDateFormat("d MMMM yyyy", Locale("id", "ID"))
+            .format(timestamp.toDate()).uppercase(Locale("id", "ID"))
+    }
+}
+
 private fun conversationId(firstUid: String, secondUid: String): String {
     val pair = listOf(firstUid, secondUid).sorted().joinToString("|")
     val digest = MessageDigest.getInstance("SHA-256").digest(pair.toByteArray(Charsets.UTF_8))
@@ -648,7 +670,25 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
                 state = listState,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(messages, key = { it.id }) { message ->
+                itemsIndexed(messages, key = { _, message -> message.id }) { index, message ->
+                    val currentDateKey = messageDateKey(message.createdAt)
+                    val previousDateKey = if (index > 0) messageDateKey(messages[index - 1].createdAt) else null
+                    if (message.createdAt != null && currentDateKey != previousDateKey) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                formatMessageDate(message.createdAt),
+                                modifier = Modifier
+                                    .background(Color(0xFFF3EDF0), RoundedCornerShape(20.dp))
+                                    .padding(horizontal = 13.dp, vertical = 6.dp),
+                                color = TextMuted,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
                     val mine = message.senderUid == currentUid
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
                         Column(
