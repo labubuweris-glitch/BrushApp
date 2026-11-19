@@ -215,8 +215,37 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
     var foundUid by remember { mutableStateOf("") }
     var selectedPeer by remember { mutableStateOf<ChatPeer?>(null) }
     var openingChat by remember { mutableStateOf(false) }
+    var recentChats by remember(uid) { mutableStateOf<List<ChatPreview>>(emptyList()) }
+    var recentChatsError by remember(uid) { mutableStateOf("") }
 
     BackHandler(enabled = selectedPeer != null) { selectedPeer = null }
+
+    DisposableEffect(db, uid) {
+        val listener = db.collection("conversations")
+            .whereArrayContains("members", uid)
+            .addSnapshotListener { snapshot, exception ->
+                if (exception != null) {
+                    recentChatsError = exception.localizedMessage ?: "Tidak dapat memuat daftar chat."
+                } else if (snapshot != null) {
+                    recentChats = snapshot.documents.mapNotNull { doc ->
+                        val members = doc.get("members") as? List<*> ?: return@mapNotNull null
+                        val peerUid = members.filterIsInstance<String>().firstOrNull { it != uid }
+                            ?: return@mapNotNull null
+                        val memberInfo = doc.get("memberInfo") as? Map<*, *>
+                        val peerInfo = memberInfo?.get(peerUid) as? Map<*, *>
+                        val peerName = peerInfo?.get("displayName") as? String ?: "Pengguna BrushApp"
+                        val peerEmail = peerInfo?.get("email") as? String ?: ""
+                        ChatPreview(
+                            peer = ChatPeer(peerUid, peerName, peerEmail),
+                            lastMessage = doc.getString("lastMessage").orEmpty(),
+                            updatedAt = doc.getTimestamp("updatedAt")?.toDate()?.time ?: 0L
+                        )
+                    }.sortedByDescending { it.updatedAt }
+                    recentChatsError = ""
+                }
+            }
+        onDispose { listener.remove() }
+    }
 
     LaunchedEffect(uid) {
         loadingProfile = true
@@ -322,12 +351,12 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(Background).imePadding().padding(26.dp),
-        verticalArrangement = Arrangement.Center
+        modifier = Modifier.fillMaxSize().background(Background).imePadding().padding(22.dp),
+        verticalArrangement = Arrangement.Top
     ) {
-        Text("BrushApp", color = Burgundy, fontSize = 38.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        Text("Halo, $displayName!", color = TextDark, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Text("BrushApp", color = Burgundy, fontSize = 34.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(5.dp))
+        Text("Halo, $displayName!", color = TextDark, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(6.dp))
         Text(email, color = TextMuted, fontSize = 13.sp)
         Spacer(Modifier.height(30.dp))
@@ -419,7 +448,40 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
                 else Text("BUKA CHAT")
             }
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(18.dp))
+        Text("CHAT TERAKHIR", color = Burgundy, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
+        if (recentChatsError.isNotBlank()) {
+            Text("Gagal memuat chat: $recentChatsError", color = Burgundy, fontSize = 12.sp)
+        }
+        if (recentChats.isEmpty()) {
+            Text("Belum ada percakapan. Cari email pengguna untuk memulai chat.", color = TextMuted, fontSize = 13.sp)
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(recentChats, key = { it.peer.uid }) { item ->
+                    TextButton(
+                        onClick = { selectedPeer = item.peer },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Text(item.peer.name, color = TextDark, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                item.lastMessage.ifBlank { "Mulai percakapan" },
+                                color = TextMuted,
+                                fontSize = 13.sp,
+                                maxLines = 1
+                            )
+                            if (item.peer.email.isNotBlank()) {
+                                Text(item.peer.email, color = TextMuted, fontSize = 10.sp, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            }
+        }
         TextButton(onClick = onSignOut, modifier = Modifier.align(Alignment.CenterHorizontally)) {
             Text("Keluar akun", color = Burgundy)
         }
@@ -440,6 +502,7 @@ private fun friendlyAuthError(error: Exception?): String {
 
 
 private data class ChatPeer(val uid: String, val name: String, val email: String)
+private data class ChatPreview(val peer: ChatPeer, val lastMessage: String, val updatedAt: Long)
 private data class ChatMessage(val id: String, val senderUid: String, val text: String)
 
 private fun conversationId(firstUid: String, secondUid: String): String {
