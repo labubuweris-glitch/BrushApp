@@ -5,6 +5,9 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,11 +23,15 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
-      - name: Build debug APK
+      - name: Build installable APK
         run: gradle assembleDebug
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk BrushApp.apk
+      - name: Publish APK to GitHub Releases
+        uses: softprops/action-gh-release@v2
         with:
-          name: BrushApp-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 7
+          tag_name: brushapp-build-${{ github.run_number }}
+          name: BrushApp Build ${{ github.run_number }}
+          files: BrushApp.apk
+          generate_release_notes: true
+          make_latest: true
