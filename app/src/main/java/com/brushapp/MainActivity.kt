@@ -740,8 +740,9 @@ private fun sendWorkerNotification(conversationId: String, messageId: String) {
             Thread {
                 var connection: HttpURLConnection? = null
                 try {
-                    val health = (URL("https://brushapp-notification.rizwaye.workers.dev/").openConnection() as HttpURLConnection).apply {
+                    val health = (URL("https://brushapp-notification.rizwaye2.workers.dev/").openConnection() as HttpURLConnection).apply {
                         requestMethod = "GET"
+                        setRequestProperty("User-Agent", "BrushApp-Android/1.0")
                         connectTimeout = 10000
                         readTimeout = 10000
                     }
@@ -750,8 +751,9 @@ private fun sendWorkerNotification(conversationId: String, messageId: String) {
                         ?.bufferedReader()?.use { it.readText() }.orEmpty()
                     health.disconnect()
                     report("Cloudflare GET: HTTP $healthCode - " + healthText.take(70))
-                    connection = (URL("https://brushapp-notification.rizwaye.workers.dev/").openConnection() as HttpURLConnection).apply {
+                    connection = (URL("https://brushapp-notification.rizwaye2.workers.dev/").openConnection() as HttpURLConnection).apply {
                         requestMethod = "POST"
+                        setRequestProperty("User-Agent", "BrushApp-Android/1.0")
                         connectTimeout = 15000
                         readTimeout = 20000
                         doOutput = true
