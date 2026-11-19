@@ -1,9 +1,17 @@
 package com.brushapp
 
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -62,9 +70,12 @@ private val TextDark = Color(0xFF252126)
 private val TextMuted = Color(0xFF777078)
 private val Success = Color(0xFF16803C)
 
+private const val MESSAGE_CHANNEL_ID = "brushapp_messages"
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        createMessageNotificationChannel()
         setContent {
             MaterialTheme(
                 colorScheme = lightColorScheme(
@@ -80,11 +91,30 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    private fun createMessageNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                MESSAGE_CHANNEL_ID,
+                "Pesan BrushApp",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Pemberitahuan saat ada pesan BrushApp baru"
+            }
+            getSystemService(NotificationManager::class.java)
+                .createNotificationChannel(channel)
+        }
+    }
 }
 
 @Composable
 private fun BrushAppRoot() {
     val auth = remember { FirebaseAuth.getInstance() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { }
+    )
     var currentUser by remember { mutableStateOf(auth.currentUser) }
 
     DisposableEffect(auth) {
@@ -93,6 +123,18 @@ private fun BrushAppRoot() {
         }
         auth.addAuthStateListener(listener)
         onDispose { auth.removeAuthStateListener(listener) }
+    }
+
+    LaunchedEffect(currentUser?.uid) {
+        if (currentUser != null &&
+            Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     if (currentUser == null) {
