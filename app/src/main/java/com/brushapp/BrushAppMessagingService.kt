@@ -31,7 +31,10 @@ class BrushAppMessagingService : FirebaseMessagingService() {
             ?: message.notification?.body
             ?: "Kamu menerima pesan BrushApp."
 
-        showMessageNotification(title, body)
+        val conversationId = message.data["conversationId"].orEmpty()
+        val senderUid = message.data["senderUid"].orEmpty()
+        val senderName = message.data["senderName"] ?: title
+        showMessageNotification(title, body, conversationId, senderUid, senderName)
     }
 
     private fun saveToken(uid: String, token: String) {
@@ -52,13 +55,22 @@ class BrushAppMessagingService : FirebaseMessagingService() {
             )
     }
 
-    private fun showMessageNotification(title: String, body: String) {
+    private fun showMessageNotification(
+        title: String,
+        body: String,
+        conversationId: String,
+        senderUid: String,
+        senderName: String
+    ) {
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("notification_conversation_id", conversationId)
+            putExtra("notification_peer_uid", senderUid)
+            putExtra("notification_peer_name", senderName)
         }
         val pendingIntent = PendingIntent.getActivity(
             this,
-            0,
+            conversationId.hashCode(),
             openAppIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
