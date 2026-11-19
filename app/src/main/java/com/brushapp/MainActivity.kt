@@ -740,7 +740,7 @@ private fun sendWorkerNotification(conversationId: String, messageId: String) {
             Thread {
                 var connection: HttpURLConnection? = null
                 try {
-                    val health = (URL("https://brushapp-notification.rizwaye2.workers.dev/").openConnection() as HttpURLConnection).apply {
+                    val health = (URL("https://brushapp-server.vercel.app/api/notify").openConnection() as HttpURLConnection).apply {
                         requestMethod = "GET"
                         setRequestProperty("User-Agent", "BrushApp-Android/1.0")
                         connectTimeout = 10000
@@ -750,8 +750,8 @@ private fun sendWorkerNotification(conversationId: String, messageId: String) {
                     val healthText = (if (healthCode in 200..299) health.inputStream else health.errorStream)
                         ?.bufferedReader()?.use { it.readText() }.orEmpty()
                     health.disconnect()
-                    report("Cloudflare GET: HTTP $healthCode - " + healthText.take(70))
-                    connection = (URL("https://brushapp-notification.rizwaye2.workers.dev/").openConnection() as HttpURLConnection).apply {
+                    report("Server GET: HTTP $healthCode - " + healthText.take(70))
+                    connection = (URL("https://brushapp-server.vercel.app/api/notify").openConnection() as HttpURLConnection).apply {
                         requestMethod = "POST"
                         setRequestProperty("User-Agent", "BrushApp-Android/1.0")
                         connectTimeout = 15000
