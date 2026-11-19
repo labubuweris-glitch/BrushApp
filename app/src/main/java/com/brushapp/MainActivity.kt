@@ -60,6 +60,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Query
+import com.google.firebase.messaging.FirebaseMessaging
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -126,7 +127,14 @@ private fun BrushAppRoot() {
     }
 
     LaunchedEffect(currentUser?.uid) {
-        if (currentUser != null &&
+        val signedInUser = currentUser
+        if (signedInUser != null) {
+            FirebaseMessaging.getInstance().token
+                .addOnSuccessListener { token ->
+                    saveFcmToken(signedInUser.uid, token)
+                }
+        }
+        if (signedInUser != null &&
             Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(
                 context,
@@ -696,4 +704,22 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
             }
         }
     }
+}
+
+
+private fun saveFcmToken(uid: String, token: String) {
+    val tokenId = MessageDigest.getInstance("SHA-256")
+        .digest(token.toByteArray(Charsets.UTF_8))
+        .joinToString("") { byte -> "%02x".format(byte) }
+    FirebaseFirestore.getInstance()
+        .collection("users").document(uid)
+        .collection("fcm_tokens").document(tokenId)
+        .set(
+            mapOf(
+                "token" to token,
+                "platform" to "android",
+                "updatedAt" to FieldValue.serverTimestamp()
+            ),
+            SetOptions.merge()
+        )
 }
