@@ -717,7 +717,6 @@ private fun UserArea(
         }
         }
     }
-}
 
 private fun friendlyAuthError(error: Exception?): String {
     val raw = error?.message.orEmpty()
