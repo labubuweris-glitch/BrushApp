@@ -890,7 +890,6 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text(if (mine) "Kamu" else peer.name, color = TextMuted, fontSize = 10.sp)
                                 Text(formatMessageTime(message.createdAt), color = TextMuted, fontSize = 10.sp)
                             }
                         }
