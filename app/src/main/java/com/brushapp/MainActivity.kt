@@ -334,7 +334,7 @@ private fun UserArea(
     var selectedPeer by remember { mutableStateOf<ChatPeer?>(null) }
     var openingPeerUid by remember { mutableStateOf("") }
 
-    BackHandler(enabled = selectedPeer != null) { selectedPeer = null }
+    BackHandler(enabled = selectedPeer != null) { selectedPeer = null; searchText = "" }
     BackHandler(enabled = selectedPeer == null && searchText.isNotBlank()) { searchText = "" }
 
     DisposableEffect(db, uid) {
@@ -426,7 +426,7 @@ private fun UserArea(
     }
 
     if (selectedPeer != null) {
-        ChatScreen(db, uid, selectedPeer!!) { selectedPeer = null }
+        ChatScreen(db, uid, selectedPeer!!) { selectedPeer = null; searchText = "" }
         return
     }
 
