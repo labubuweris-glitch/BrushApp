@@ -348,7 +348,8 @@ private fun UserArea(
                         if (peerUid == uid) return@mapNotNull null
                         val name = doc.getString("displayName").orEmpty()
                         if (name.isBlank()) return@mapNotNull null
-                        DirectoryUser(ChatPeer(peerUid, name), doc.getString("photoBase64").orEmpty())
+                        val photo = doc.getString("photoBase64").orEmpty()
+                        DirectoryUser(ChatPeer(peerUid, name, photo), photo)
                     }
                     directoryError = ""
                     directoryLoading = false
@@ -665,7 +666,7 @@ private fun UserArea(
                                 openingPeerUid = item.peer.uid
                                 openConversation(db, uid, displayName, item.peer) { error ->
                                     openingPeerUid = ""
-                                    if (error == null) selectedPeer = item.peer
+                                    if (error == null) selectedPeer = item.peer.copy(photoBase64 = item.photoBase64)
                                     else directoryError = "Gagal membuka chat: $error"
                                 }
                             },
@@ -708,7 +709,7 @@ private fun friendlyAuthError(error: Exception?): String {
 }
 
 
-private data class ChatPeer(val uid: String, val name: String)
+private data class ChatPeer(val uid: String, val name: String, val photoBase64: String = "")
 private data class DirectoryUser(val peer: ChatPeer, val photoBase64: String = "")
 private data class ChatMessage(val id: String, val senderUid: String, val text: String, val createdAt: Timestamp?)
 
@@ -836,7 +837,8 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
             verticalAlignment = Alignment.CenterVertically
         ) {
             TextButton(onClick = onBack) { Text("‹ Kembali", color = Burgundy) }
-            Column(Modifier.padding(start = 6.dp)) {
+            ProfileAvatar(peer.photoBase64, 42.dp)
+            Column(Modifier.padding(start = 10.dp)) {
                 Text(peer.name, color = TextDark, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
         }
