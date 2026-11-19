@@ -19,8 +19,18 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("brushapp-release.jks")
+            storePassword = System.getenv("BRUSHAPP_KEY_PASSWORD")
+            keyAlias = "brushapp"
+            keyPassword = System.getenv("BRUSHAPP_KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
