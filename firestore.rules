@@ -2,7 +2,29 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Tahap pengujian: akun hanya dapat mengakses dokumen uji miliknya sendiri.
+
+    // Profil hanya boleh dibaca dan diubah oleh pemilik akun.
+    match /users/{userId} {
+      allow get, create, update: if request.auth != null
+                                 && request.auth.uid == userId;
+      allow list, delete: if false;
+    }
+
+    // Indeks pencarian email: hanya bisa mengambil satu dokumen tertentu,
+    // tidak bisa membaca seluruh daftar pengguna.
+    match /user_lookup/{emailKey} {
+      allow get: if request.auth != null;
+      allow list: if false;
+
+      // Pengguna hanya boleh membuat/mengubah indeks untuk email akunnya sendiri.
+      allow create, update: if request.auth != null
+                            && request.resource.data.uid == request.auth.uid
+                            && request.resource.data.email == request.auth.token.email;
+      allow delete: if request.auth != null
+                    && resource.data.uid == request.auth.uid;
+    }
+
+    // Izin pengujian awal tetap dibatasi pada dokumen milik akun sendiri.
     match /brushapp_test/{userId} {
       allow read, write: if request.auth != null
                          && request.auth.uid == userId;
