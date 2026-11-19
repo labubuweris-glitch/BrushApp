@@ -30,6 +30,7 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 private val Bg = Color(0xFF0C0D0E)
 private val Panel = Color(0xFF17191B)
@@ -279,7 +280,8 @@ private data class MessageItem(
     val senderId: String,
     val text: String,
     val createdAt: Timestamp?,
-    val readAt: Timestamp?
+    val readAt: Timestamp?,
+    val pending: Boolean
 )
 
 @Composable
@@ -509,12 +511,25 @@ private fun ChatThreadScreen(uid: String, chat: ChatItem, back: () -> Unit) {
     var messages by remember { mutableStateOf<List<MessageItem>>(emptyList()) }
     var input by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
+    var sendAttempt by remember { mutableIntStateOf(0) }
+    var finishedAttempt by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf("") }
+
+    LaunchedEffect(sendAttempt) {
+        val attempt = sendAttempt
+        if (attempt > 0) {
+            delay(20000)
+            if (sendAttempt == attempt && finishedAttempt != attempt) {
+                sending = false
+                error = "Belum ada konfirmasi dari server. Pesan masih menunggu sinkronisasi; jangan kirim ulang pesan yang sama dulu."
+            }
+        }
+    }
 
     DisposableEffect(chat.id) {
         val listener = db.collection("chats").document(chat.id).collection("messages")
             .orderBy("createdAt", Query.Direction.ASCENDING)
-            .addSnapshotListener { snapshot, e ->
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, e ->
                 if (e != null) error = e.localizedMessage ?: "Gagal memuat pesan."
                 else if (snapshot != null) {
                     messages = snapshot.documents.map { d ->
@@ -523,7 +538,8 @@ private fun ChatThreadScreen(uid: String, chat: ChatItem, back: () -> Unit) {
                             d.getString("senderId") ?: "",
                             d.getString("text") ?: "",
                             d.getTimestamp("createdAt"),
-                            d.getTimestamp("readAt")
+                            d.getTimestamp("readAt"),
+                            d.metadata.hasPendingWrites()
                         )
                     }
                     // Saat percakapan dibuka, tandai pesan masuk sebagai sudah dibaca.
@@ -565,6 +581,8 @@ private fun ChatThreadScreen(uid: String, chat: ChatItem, back: () -> Unit) {
                     val text = input.trim()
                     if (text.isNotEmpty() && !sending) {
                         sending = true
+                        sendAttempt++
+                        val thisAttempt = sendAttempt
                         input = ""
                         error = ""
                         val chatRef = db.collection("chats").document(chat.id)
@@ -577,17 +595,21 @@ private fun ChatThreadScreen(uid: String, chat: ChatItem, back: () -> Unit) {
                             "createdAt" to FieldValue.serverTimestamp(),
                             "readAt" to null
                         )).addOnSuccessListener {
-                            sending = false
+                            finishedAttempt = thisAttempt
+                            if (sendAttempt == thisAttempt) sending = false
                             chatRef.update(
                                 "lastMessage", text,
                                 "updatedAt", FieldValue.serverTimestamp()
                             ).addOnFailureListener { e ->
-                                error = "Pesan tersimpan, tetapi daftar chat belum diperbarui: ${e.localizedMessage ?: "coba lagi nanti"}"
+                                error = "Pesan sudah tersimpan, tetapi daftar chat belum diperbarui: ${e.localizedMessage ?: "coba lagi nanti"}"
                             }
                         }.addOnFailureListener { e ->
-                            if (input.isBlank()) input = text
-                            error = "Pesan gagal disimpan: ${e.localizedMessage ?: "periksa koneksi dan izin Firestore"}"
-                            sending = false
+                            finishedAttempt = thisAttempt
+                            if (sendAttempt == thisAttempt) {
+                                if (input.isBlank()) input = text
+                                error = "Pesan gagal disimpan: ${e.localizedMessage ?: "periksa koneksi dan izin Firestore"}"
+                                sending = false
+                            }
                         }
                     }
                 },
@@ -620,9 +642,17 @@ private fun MessageBubble(message: MessageItem, mine: Boolean) {
                     if (mine) {
                         Spacer(Modifier.width(5.dp))
                         Text(
-                            if (message.readAt != null) "✓✓" else "✓",
-                            color = if (message.readAt != null) Color(0xFF70C9FF) else Color(0xFFB9C8BF),
-                            fontSize = 12.sp,
+                            when {
+                                message.pending -> "Mengirim..."
+                                message.readAt != null -> "✓✓"
+                                else -> "✓"
+                            },
+                            color = when {
+                                message.pending -> Color(0xFFFFD180)
+                                message.readAt != null -> Color(0xFF70C9FF)
+                                else -> Color(0xFFB9C8BF)
+                            },
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
