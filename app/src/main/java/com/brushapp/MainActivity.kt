@@ -774,7 +774,11 @@ private fun sendWorkerNotification(conversationId: String, messageId: String) {
                         report("Worker gagal ($responseCode): " + result.optString("error", responseText).take(180))
                     }
                 } catch (e: Exception) {
-                    report("Gagal menghubungi Worker: " + (e.localizedMessage ?: "koneksi bermasalah").take(140))
+                    var cause: Throwable = e
+                    while (cause.cause != null && cause.cause !== cause) cause = cause.cause!!
+                    val errorType = cause.javaClass.simpleName
+                    val errorDetail = cause.message ?: e.message ?: "tanpa detail"
+                    report("Worker gagal [$errorType]: " + errorDetail.take(140))
                 } finally {
                     connection?.disconnect()
                 }
