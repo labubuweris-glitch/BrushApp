@@ -90,7 +90,10 @@ private fun ChatRow(chat: ChatPreview) {
         Modifier.fillMaxWidth().clickable { }.padding(horizontal = 20.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.size(52.dp).background(Color(0xFF242729), CircleShape)), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier.size(52.dp).background(Color(0xFF242729), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
             Text(chat.initials, color = Accent, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.width(14.dp))
