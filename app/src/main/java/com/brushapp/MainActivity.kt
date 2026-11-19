@@ -229,9 +229,8 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
                         val peerUid = doc.getString("uid") ?: doc.id
                         if (peerUid == uid) return@mapNotNull null
                         val name = doc.getString("displayName").orEmpty()
-                        val peerEmail = doc.getString("email").orEmpty()
-                        if (name.isBlank() || peerEmail.isBlank()) return@mapNotNull null
-                        DirectoryUser(ChatPeer(peerUid, name, peerEmail))
+                        if (name.isBlank()) return@mapNotNull null
+                        DirectoryUser(ChatPeer(peerUid, name))
                     }
                     directoryError = ""
                     directoryLoading = false
@@ -248,8 +247,8 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
                 if (displayName.isNotBlank()) {
                     val directoryData = mapOf(
                         "uid" to uid,
-                        "email" to email,
                         "displayName" to displayName,
+                        "email" to FieldValue.delete(),
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                     db.collection("user_directory").document(uid)
@@ -326,7 +325,11 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
                         val batch = db.batch()
                         batch.set(db.collection("users").document(uid), profileData, SetOptions.merge())
                         batch.set(db.collection("user_lookup").document(email.lowercase()), profileData, SetOptions.merge())
-                        batch.set(db.collection("user_directory").document(uid), profileData, SetOptions.merge())
+                        batch.set(db.collection("user_directory").document(uid), mapOf(
+                            "uid" to uid,
+                            "displayName" to cleanName,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        ), SetOptions.merge())
                         batch.commit()
                             .addOnSuccessListener {
                                 displayName = cleanName
@@ -356,7 +359,7 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
 
     val filteredUsers = directoryUsers.filter { item ->
         val q = searchText.trim().lowercase()
-        q.isBlank() || item.peer.name.lowercase().contains(q) || item.peer.email.lowercase().contains(q)
+        q.isBlank() || item.peer.name.lowercase().contains(q)
     }
 
     Column(
@@ -384,7 +387,7 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
             value = searchText,
             onValueChange = { searchText = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Cari nama atau email") },
+            label = { Text("Cari nama pengguna") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
             shape = RoundedCornerShape(13.dp),
@@ -444,7 +447,7 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
                         TextButton(
                             onClick = {
                                 openingPeerUid = item.peer.uid
-                                openConversation(db, uid, displayName, email, item.peer) { error ->
+                                openConversation(db, uid, displayName, item.peer) { error ->
                                     openingPeerUid = ""
                                     if (error == null) selectedPeer = item.peer
                                     else directoryError = "Gagal membuka chat: $error"
@@ -459,7 +462,6 @@ private fun UserArea(user: FirebaseUser, onSignOut: () -> Unit) {
                             ) {
                                 Column(Modifier.weight(1f)) {
                                     Text(item.peer.name, color = TextDark, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                                    Text(item.peer.email, color = TextMuted, fontSize = 12.sp)
                                 }
                                 if (openingPeerUid == item.peer.uid) {
                                     CircularProgressIndicator(Modifier.height(20.dp), color = Burgundy, strokeWidth = 2.dp)
@@ -488,7 +490,7 @@ private fun friendlyAuthError(error: Exception?): String {
 }
 
 
-private data class ChatPeer(val uid: String, val name: String, val email: String)
+private data class ChatPeer(val uid: String, val name: String)
 private data class DirectoryUser(val peer: ChatPeer)
 private data class ChatMessage(val id: String, val senderUid: String, val text: String)
 
@@ -499,7 +501,7 @@ private fun conversationId(firstUid: String, secondUid: String): String {
 }
 
 private fun openConversation(
-    db: FirebaseFirestore, currentUid: String, currentName: String, currentEmail: String,
+    db: FirebaseFirestore, currentUid: String, currentName: String,
     peer: ChatPeer, onFinished: (String?) -> Unit
 ) {
     val id = conversationId(currentUid, peer.uid)
@@ -510,8 +512,8 @@ private fun openConversation(
             val data = hashMapOf<String, Any>(
                 "members" to listOf(currentUid, peer.uid).sorted(),
                 "memberInfo" to mapOf(
-                    currentUid to mapOf("displayName" to currentName, "email" to currentEmail),
-                    peer.uid to mapOf("displayName" to peer.name, "email" to peer.email)
+                    currentUid to mapOf("displayName" to currentName),
+                    peer.uid to mapOf("displayName" to peer.name)
                 ),
                 "createdBy" to currentUid,
                 "createdAt" to FieldValue.serverTimestamp(),
@@ -565,7 +567,6 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
             TextButton(onClick = onBack) { Text("‹ Kembali", color = Burgundy) }
             Column(Modifier.padding(start = 6.dp)) {
                 Text(peer.name, color = TextDark, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Text(peer.email, color = TextMuted, fontSize = 11.sp)
             }
         }
         if (error.isNotBlank()) Text(error, color = Burgundy, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
