@@ -9,13 +9,16 @@ service cloud.firestore {
       allow list, delete: if false;
 
       match /fcm_tokens/{tokenId} {
-        allow read, create, update, delete: if request.auth != null
-                                             && request.auth.uid == userId
-                                             && request.resource.data.keys().hasOnly([
-                                               'token', 'platform', 'updatedAt'
-                                             ])
-                                             && request.resource.data.token is string
-                                             && request.resource.data.platform == 'android';
+        allow read, delete: if request.auth != null
+                             && request.auth.uid == userId;
+
+        allow create, update: if request.auth != null
+                              && request.auth.uid == userId
+                              && request.resource.data.keys().hasOnly([
+                                'token', 'platform', 'updatedAt'
+                              ])
+                              && request.resource.data.token is string
+                              && request.resource.data.platform == 'android';
       }
     }
 
