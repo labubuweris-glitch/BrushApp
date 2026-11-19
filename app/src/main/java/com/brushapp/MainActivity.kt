@@ -1,5 +1,8 @@
 package com.brushapp
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.Manifest
 import android.content.Intent
 import android.graphics.Bitmap
@@ -40,6 +43,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -277,8 +281,7 @@ private fun AuthField(
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         visualTransformation = if (isPassword) PasswordVisualTransformation()
-                               else androidx.compose.ui.text.input.VisualTransformation.None,
-        shape = RoundedCornerShape(13.dp),
+                               else androidx.compose.ui.text.input.VisualTransformation.None,        shape = RoundedCornerShape(13.dp),
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = Burgundy, focusedLabelColor = Burgundy, cursorColor = Burgundy,
             unfocusedBorderColor = Color(0xFFD8D2D6), focusedTextColor = TextDark, unfocusedTextColor = TextDark
@@ -333,9 +336,38 @@ private fun UserArea(
     var conversationLoading by remember(uid) { mutableStateOf(true) }
     var selectedPeer by remember { mutableStateOf<ChatPeer?>(null) }
     var openingPeerUid by remember { mutableStateOf("") }
+    var showExitDialog by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = selectedPeer != null) { selectedPeer = null; searchText = "" }
-    BackHandler(enabled = selectedPeer == null && searchText.isNotBlank()) { searchText = "" }
+    BackHandler(enabled = true) {
+        when {
+            showExitDialog -> showExitDialog = false
+            selectedPeer != null -> { selectedPeer = null; searchText = "" }
+            editingProfile -> { editingProfile = false; profileError = "" }
+            searchText.isNotBlank() -> searchText = ""
+            else -> showExitDialog = true
+        }
+    }
+
+    if (showExitDialog) {
+        AlertDialog(
+            onDismissRequest = { showExitDialog = false },
+            title = { Text("Keluar dari BrushApp?") },
+            text = { Text("Yakin ingin menutup aplikasi?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showExitDialog = false
+                        context.findActivity()?.finish()
+                    }
+                ) { Text("KELUAR", color = Burgundy) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExitDialog = false }) {
+                    Text("BATAL", color = TextMuted)
+                }
+            }
+        )
+    }
 
     DisposableEffect(db, uid) {
         directoryLoading = true
@@ -557,8 +589,7 @@ private fun UserArea(
             Column(Modifier.fillMaxWidth().background(Color(0xFFFFF8FA), RoundedCornerShape(14.dp)).padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ProfileAvatar(editedPhoto, 68.dp)
-                    Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                        Text("FOTO PROFIL", color = TextDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Column(Modifier.padding(start = 12.dp).weight(1f)) {                        Text("FOTO PROFIL", color = TextDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         TextButton(onClick = { photoPicker.launch("image/*") }) {
                             Text("PILIH DARI GALERI", color = Burgundy)
                         }
@@ -719,6 +750,12 @@ private fun UserArea(
         }
     }
 
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
 private fun friendlyAuthError(error: Exception?): String {
     val raw = error?.message.orEmpty()
     return when {
@@ -837,8 +874,7 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
         val listener = conversation.collection("messages")
             .orderBy("createdAt", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, exception ->
-                if (exception != null) {
-                    error = "Gagal memuat pesan: ${exception.localizedMessage ?: "Kesalahan tidak diketahui"}"
+                if (exception != null) {                    error = "Gagal memuat pesan: ${exception.localizedMessage ?: "Kesalahan tidak diketahui"}"
                     loading = false
                 } else if (snapshot != null) {
                     messages = snapshot.documents.map { doc ->
