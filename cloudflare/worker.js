@@ -90,7 +90,9 @@ async function sendNotifications(env, request) {
   if (!tokenResponse.ok) throw new Error("Gagal mengambil token penerima.");
   const tokenData = await tokenResponse.json();
   const tokens = (tokenData.documents || []).map(doc => doc.fields?.token?.stringValue).filter(Boolean);
+  if (tokens.length === 0) throw new Error("Token FCM penerima tidak ditemukan di Firestore.");
   let sent = 0;
+  const failures = [];
   for (const token of tokens) {
     const fcmResponse = await fetch("https://fcm.googleapis.com/v1/projects/" + PROJECT_ID + "/messages:send", {
       method: "POST",
@@ -103,9 +105,14 @@ async function sendNotifications(env, request) {
         }
       })
     });
-    if (fcmResponse.ok) sent++;
+    if (fcmResponse.ok) {
+      sent++;
+    } else {
+      const errorBody = await fcmResponse.text();
+      failures.push({ status: fcmResponse.status, detail: errorBody.slice(0, 700) });
+    }
   }
-  return { sent, total: tokens.length };
+  return { sent, total: tokens.length, failures };
 }
 export default {
   async fetch(request, env) {
