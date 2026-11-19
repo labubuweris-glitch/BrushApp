@@ -47,11 +47,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Query
 import java.security.MessageDigest
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 private val Burgundy = Color(0xFF800020)
 private val Background = Color(0xFFFFFFFF)
@@ -492,7 +495,12 @@ private fun friendlyAuthError(error: Exception?): String {
 
 private data class ChatPeer(val uid: String, val name: String)
 private data class DirectoryUser(val peer: ChatPeer)
-private data class ChatMessage(val id: String, val senderUid: String, val text: String)
+private data class ChatMessage(val id: String, val senderUid: String, val text: String, val createdAt: Timestamp?)
+
+private fun formatMessageTime(timestamp: Timestamp?): String {
+    if (timestamp == null) return ""
+    return SimpleDateFormat("HH.mm", Locale.getDefault()).format(timestamp.toDate())
+}
 
 private fun conversationId(firstUid: String, secondUid: String): String {
     val pair = listOf(firstUid, secondUid).sorted().joinToString("|")
@@ -547,7 +555,7 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
                     loading = false
                 } else if (snapshot != null) {
                     messages = snapshot.documents.map { doc ->
-                        ChatMessage(doc.id, doc.getString("senderUid").orEmpty(), doc.getString("text").orEmpty())
+                        ChatMessage(doc.id, doc.getString("senderUid").orEmpty(), doc.getString("text").orEmpty(), doc.getTimestamp("createdAt"))
                     }
                     loading = false
                 }
@@ -596,8 +604,14 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
                                 .padding(horizontal = 13.dp, vertical = 9.dp)
                         ) {
                             Text(message.text, color = TextDark, fontSize = 15.sp)
-                            Text(if (mine) "Kamu" else peer.name, color = TextMuted, fontSize = 10.sp,
-                                modifier = Modifier.align(Alignment.End).padding(top = 4.dp))
+                            Row(
+                                modifier = Modifier.align(Alignment.End).padding(top = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(if (mine) "Kamu" else peer.name, color = TextMuted, fontSize = 10.sp)
+                                Text(formatMessageTime(message.createdAt), color = TextMuted, fontSize = 10.sp)
+                            }
                         }
                     }
                 }
