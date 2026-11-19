@@ -508,12 +508,9 @@ private fun UserArea(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                ProfileAvatar(profilePhoto, 48.dp)
-                Column(Modifier.padding(start = 10.dp)) {
-                    Text("BrushApp", color = Burgundy, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                    Text("Halo, $displayName!", color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                }
+            Column(Modifier.weight(1f)) {
+                Text("BrushApp", color = Burgundy, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                Text("Halo, $displayName!", color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             }
             TextButton(onClick = {
                 editedName = displayName
