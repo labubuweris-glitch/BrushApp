@@ -62,6 +62,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -329,6 +331,8 @@ private fun UserArea(
         }
     }
     var searchText by remember { mutableStateOf("") }
+    var searchHasFocus by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
     var directoryUsers by remember(uid) { mutableStateOf<List<DirectoryUser>>(emptyList()) }
     var directoryLoading by remember(uid) { mutableStateOf(true) }
     var directoryError by remember(uid) { mutableStateOf("") }
@@ -343,7 +347,11 @@ private fun UserArea(
             showExitDialog -> showExitDialog = false
             selectedPeer != null -> { selectedPeer = null; searchText = "" }
             editingProfile -> { editingProfile = false; profileError = "" }
-            searchText.isNotBlank() -> searchText = ""
+            searchHasFocus || searchText.isNotBlank() -> {
+                searchText = ""
+                searchHasFocus = false
+                focusManager.clearFocus(force = true)
+            }
             else -> showExitDialog = true
         }
     }
@@ -658,7 +666,7 @@ private fun UserArea(
         OutlinedTextField(
             value = searchText,
             onValueChange = { searchText = it },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().onFocusChanged { searchHasFocus = it.isFocused },
             label = { Text("Cari pengguna BrushApp") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
