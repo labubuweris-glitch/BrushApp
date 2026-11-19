@@ -28,6 +28,8 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 private val Bg = Color(0xFF0C0D0E)
 private val Panel = Color(0xFF17191B)
@@ -272,7 +274,13 @@ private data class ChatItem(
     val id: String, val otherUid: String, val otherUsername: String,
     val lastMessage: String, val updatedAt: Timestamp?
 )
-private data class MessageItem(val id: String, val senderId: String, val text: String)
+private data class MessageItem(
+    val id: String,
+    val senderId: String,
+    val text: String,
+    val createdAt: Timestamp?,
+    val readAt: Timestamp?
+)
 
 @Composable
 private fun BrushHomeScreen(uid: String, username: String, signOut: () -> Unit) {
@@ -487,8 +495,23 @@ private fun ChatThreadScreen(uid: String, chat: ChatItem, back: () -> Unit) {
             .orderBy("createdAt", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, e ->
                 if (e != null) error = e.localizedMessage ?: "Gagal memuat pesan."
-                else if (snapshot != null) messages = snapshot.documents.map { d ->
-                    MessageItem(d.id, d.getString("senderId") ?: "", d.getString("text") ?: "")
+                else if (snapshot != null) {
+                    messages = snapshot.documents.map { d ->
+                        MessageItem(
+                            d.id,
+                            d.getString("senderId") ?: "",
+                            d.getString("text") ?: "",
+                            d.getTimestamp("createdAt"),
+                            d.getTimestamp("readAt")
+                        )
+                    }
+                    // Saat percakapan dibuka, tandai pesan masuk sebagai sudah dibaca.
+                    snapshot.documents
+                        .filter { it.getString("senderId") != uid && it.getTimestamp("readAt") == null }
+                        .forEach { doc ->
+                            doc.reference.update("readAt", FieldValue.serverTimestamp())
+                                .addOnFailureListener { /* Akan dicoba lagi saat snapshot berikutnya. */ }
+                        }
                 }
             }
         onDispose { listener.remove() }
@@ -524,7 +547,12 @@ private fun ChatThreadScreen(uid: String, chat: ChatItem, back: () -> Unit) {
                         val chatRef = db.collection("chats").document(chat.id)
                         val msgRef = chatRef.collection("messages").document()
                         val batch = db.batch()
-                        batch.set(msgRef, mapOf("senderId" to uid, "text" to text, "createdAt" to FieldValue.serverTimestamp()))
+                        batch.set(msgRef, mapOf(
+                            "senderId" to uid,
+                            "text" to text,
+                            "createdAt" to FieldValue.serverTimestamp(),
+                            "readAt" to null
+                        ))
                         batch.update(chatRef, mapOf("lastMessage" to text, "updatedAt" to FieldValue.serverTimestamp()))
                         batch.commit().addOnSuccessListener { input = ""; sending = false }
                             .addOnFailureListener { e -> error = e.localizedMessage ?: "Pesan gagal dikirim."; sending = false }
@@ -545,7 +573,28 @@ private fun MessageBubble(message: MessageItem, mine: Boolean) {
             color = if (mine) Color(0xFF245A40) else Panel,
             shape = RoundedCornerShape(16.dp), modifier = Modifier.padding(vertical = 4.dp).widthIn(max = 290.dp)
         ) {
-            Text(message.text, color = White, modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp), fontSize = 15.sp)
+            Column(
+                Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
+                horizontalAlignment = Alignment.End
+            ) {
+                Text(message.text, color = White, fontSize = 15.sp)
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val time = message.createdAt?.toDate()?.let {
+                        SimpleDateFormat("HH:mm", Locale.getDefault()).format(it)
+                    } ?: ""
+                    Text(time, color = Color(0xFFB9C8BF), fontSize = 10.sp)
+                    if (mine) {
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            if (message.readAt != null) "✓✓" else "✓",
+                            color = if (message.readAt != null) Color(0xFF70C9FF) else Color(0xFFB9C8BF),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
         }
     }
 }
