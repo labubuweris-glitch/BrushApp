@@ -100,7 +100,7 @@ private var AppAccent by mutableStateOf(Burgundy)
 private fun brushThemeColor(theme: String): Color = when (theme) {
     "Biru" -> Color(0xFF1976D2)
     "Hijau" -> Color(0xFF2E8B57)
-    "Kuning" -> Color(0xFFE0A800)
+    "Kuning" -> Color(0xFFB8860B)
     "Ungu" -> Color(0xFF7E57C2)
     "Merah" -> Color(0xFFE53935)
     else -> Color(0xFF800020)
@@ -1040,7 +1040,7 @@ private fun UserArea(
                             listOf(
                                 "Biru" to Color(0xFF1976D2),
                                 "Hijau" to Color(0xFF2E8B57),
-                                "Kuning" to Color(0xFFE0A800),
+                                "Kuning" to Color(0xFFB8860B),
                                 "Ungu" to Color(0xFF7E57C2),
                                 "Merah" to Color(0xFFE53935)
                             ).forEach { (themeName, themeColor) ->
