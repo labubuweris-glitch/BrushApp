@@ -1139,13 +1139,15 @@ private fun conversationId(firstUid: String, secondUid: String): String {
 private fun FriendDirectoryRow(item: DirectoryUser, primaryLabel: String, secondaryLabel: String?, busy: Boolean, onPrimary: () -> Unit, onSecondary: () -> Unit, unreadCount: Int = 0) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         ProfileAvatar(item.photoBase64, 42.dp)
-        Column(Modifier.weight(1f).padding(start = 10.dp)) { Text(item.peer.name, color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
-        if (unreadCount > 0) {
-            Box(
-                modifier = Modifier.padding(end = 4.dp).background(Burgundy, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(unreadCount.toString(), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Row(Modifier.weight(1f).padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(item.peer.name, color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            if (unreadCount > 0) {
+                Box(
+                    modifier = Modifier.padding(start = 7.dp).background(Burgundy, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(unreadCount.toString(), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
         if (busy) CircularProgressIndicator(Modifier.size(20.dp), color = Burgundy, strokeWidth = 2.dp)
