@@ -47,6 +47,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -185,7 +186,7 @@ private fun BrushAppRoot(notificationPeerUid: String, notificationPeerName: Stri
 
     if (currentUser == null) {
         AuthScreen(auth)
-    } else {
+    } else if (currentUser!!.isEmailVerified) {
         UserArea(
             user = currentUser!!,
             notificationPeerUid = notificationPeerUid,
@@ -193,6 +194,11 @@ private fun BrushAppRoot(notificationPeerUid: String, notificationPeerName: Stri
             notificationRequestId = notificationRequestId,
             onSignOut = { auth.signOut() }
         )
+    } else {
+        LaunchedEffect(currentUser!!.uid) {
+            auth.signOut()
+        }
+        AuthScreen(auth)
     }
 }
 
@@ -202,6 +208,7 @@ private fun AuthScreen(auth: FirebaseAuth) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
 
@@ -220,10 +227,20 @@ private fun AuthScreen(auth: FirebaseAuth) {
         Spacer(Modifier.height(20.dp))
         AuthField(email, { email = it; message = "" }, "Alamat email", KeyboardType.Email)
         Spacer(Modifier.height(12.dp))
-        AuthField(password, { password = it; message = "" }, "Kata sandi", KeyboardType.Password, true)
+        AuthField(
+            password, { password = it; message = "" },
+            "Kata sandi", KeyboardType.Password, true, passwordVisible
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = passwordVisible, onCheckedChange = { passwordVisible = it })
+            Text("Tampilkan password", color = TextMuted, fontSize = 13.sp)
+        }
         if (isRegister) {
-            Spacer(Modifier.height(12.dp))
-            AuthField(confirmPassword, { confirmPassword = it; message = "" }, "Ulangi kata sandi", KeyboardType.Password, true)
+            Spacer(Modifier.height(4.dp))
+            AuthField(
+                confirmPassword, { confirmPassword = it; message = "" },
+                "Ulangi kata sandi", KeyboardType.Password, true, passwordVisible
+            )
         }
         if (message.isNotBlank()) {
             Spacer(Modifier.height(12.dp))
@@ -240,11 +257,56 @@ private fun AuthScreen(auth: FirebaseAuth) {
                     isRegister && password != confirmPassword -> message = "Ulangan kata sandi tidak sama."
                     else -> {
                         busy = true
-                        val task = if (isRegister) auth.createUserWithEmailAndPassword(cleanEmail, password)
-                                   else auth.signInWithEmailAndPassword(cleanEmail, password)
-                        task.addOnCompleteListener { result ->
-                            busy = false
-                            if (!result.isSuccessful) message = friendlyAuthError(result.exception)
+                        if (isRegister) {
+                            auth.createUserWithEmailAndPassword(cleanEmail, password)
+                                .addOnCompleteListener { result ->
+                                    busy = false
+                                    if (result.isSuccessful) {
+                                        val createdUser = auth.currentUser
+                                        if (createdUser != null) {
+                                            createdUser.sendEmailVerification()
+                                                .addOnCompleteListener { verification ->
+                                                    auth.signOut()
+                                                    message = if (verification.isSuccessful) {
+                                                        "Akun berhasil dibuat. Silakan cek email untuk verifikasi sebelum masuk."
+                                                    } else {
+                                                        "Akun berhasil dibuat, tetapi email verifikasi gagal dikirim. Coba masuk lagi untuk mengirim ulang."
+                                                    }
+                                                }
+                                        } else {
+                                            auth.signOut()
+                                            message = "Akun berhasil dibuat. Silakan masuk dan verifikasi email."
+                                        }
+                                    } else {
+                                        message = friendlyAuthError(result.exception)
+                                    }
+                                }
+                        } else {
+                            auth.signInWithEmailAndPassword(cleanEmail, password)
+                                .addOnCompleteListener { result ->
+                                    busy = false
+                                    if (result.isSuccessful) {
+                                        val signedInUser = auth.currentUser
+                                        if (signedInUser?.isEmailVerified == true) {
+                                            message = ""
+                                        } else if (signedInUser != null) {
+                                            signedInUser.sendEmailVerification()
+                                                .addOnCompleteListener { verification ->
+                                                    auth.signOut()
+                                                    message = if (verification.isSuccessful) {
+                                                        "Email belum diverifikasi. Tautan verifikasi telah dikirim ulang. Silakan cek email."
+                                                    } else {
+                                                        "Email belum diverifikasi. Gagal mengirim tautan verifikasi. Coba lagi nanti."
+                                                    }
+                                                }
+                                        } else {
+                                            auth.signOut()
+                                            message = "Gagal memeriksa akun. Silakan coba lagi."
+                                        }
+                                    } else {
+                                        message = friendlyLoginError(result.exception)
+                                    }
+                                }
                         }
                     }
                 }
@@ -273,7 +335,8 @@ private fun AuthField(
     onValueChange: (String) -> Unit,
     label: String,
     keyboardType: KeyboardType,
-    isPassword: Boolean = false
+    isPassword: Boolean = false,
+    passwordVisible: Boolean = false
 ) {
     OutlinedTextField(
         value = value,
@@ -282,8 +345,9 @@ private fun AuthField(
         label = { Text(label) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-        visualTransformation = if (isPassword) PasswordVisualTransformation()
-                               else androidx.compose.ui.text.input.VisualTransformation.None,        shape = RoundedCornerShape(13.dp),
+        visualTransformation = if (isPassword && !passwordVisible) PasswordVisualTransformation()
+                               else androidx.compose.ui.text.input.VisualTransformation.None,
+        shape = RoundedCornerShape(13.dp),
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = Burgundy, focusedLabelColor = Burgundy, cursorColor = Burgundy,
             unfocusedBorderColor = Color(0xFFD8D2D6), focusedTextColor = TextDark, unfocusedTextColor = TextDark
@@ -822,12 +886,19 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
+private fun friendlyLoginError(error: Exception?): String {
+    val raw = error?.message.orEmpty()
+    return when {
+        raw.contains("network", ignoreCase = true) -> "Koneksi internet bermasalah. Coba lagi."
+        raw.contains("too many requests", ignoreCase = true) -> "Terlalu banyak percobaan. Coba lagi nanti."
+        else -> "Email atau password salah atau belum terdaftar."
+    }
+}
+
 private fun friendlyAuthError(error: Exception?): String {
     val raw = error?.message.orEmpty()
     return when {
         raw.contains("email address is already in use", ignoreCase = true) -> "Email ini sudah terdaftar. Silakan masuk."
-        raw.contains("password is invalid", ignoreCase = true) || raw.contains("wrong password", ignoreCase = true) -> "Email atau kata sandi salah."
-        raw.contains("no user record", ignoreCase = true) || raw.contains("user-not-found", ignoreCase = true) -> "Akun belum terdaftar. Silakan daftar dahulu."
         raw.contains("network", ignoreCase = true) -> "Koneksi internet bermasalah. Coba lagi."
         raw.isNotBlank() -> raw
         else -> "Terjadi kesalahan. Silakan coba lagi."
