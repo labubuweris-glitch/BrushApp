@@ -484,6 +484,7 @@ private fun UserArea(
         }
     }
     var directoryUsers by remember(uid) { mutableStateOf<List<DirectoryUser>>(emptyList()) }
+    var friendships by remember(uid) { mutableStateOf<Map<String, FriendLink>>(emptyMap()) }
     var directoryLoading by remember(uid) { mutableStateOf(true) }
     var directoryError by remember(uid) { mutableStateOf("") }
     var selectedPeer by remember { mutableStateOf<ChatPeer?>(null) }
@@ -521,6 +522,15 @@ private fun UserArea(
     }
 
     DisposableEffect(db, uid) {
+        val friendshipListener = db.collection("friendships")
+            .whereArrayContains("users", uid)
+            .addSnapshotListener { snapshot, exception ->
+                if (exception == null && snapshot != null) {
+                    friendships = snapshot.documents.associate { doc ->
+                        doc.id to FriendLink(doc.getString("status").orEmpty(), doc.getString("requesterUid").orEmpty(), doc.getString("recipientUid").orEmpty())
+                    }
+                }
+            }
         directoryLoading = true
         directoryError = ""
         val listener = db.collection("user_directory")
@@ -542,7 +552,7 @@ private fun UserArea(
                     directoryLoading = false
                 }
             }
-        onDispose { listener.remove() }
+        onDispose { listener.remove(); friendshipListener.remove() }
     }
 
 
@@ -552,10 +562,15 @@ private fun UserArea(
             val peer = directoryUsers.firstOrNull { it.peer.uid == notificationPeerUid }?.peer
             if (peer != null) {
                 openingPeerUid = peer.uid
-                openConversation(db, uid, displayName, peer) { error ->
-                    openingPeerUid = ""
-                    if (error == null) selectedPeer = peer
-                    else directoryError = "Gagal membuka chat dari notifikasi: $error"
+                if (friendships[conversationId(uid, peer.uid)]?.status == "accepted") {
+                    openingPeerUid = peer.uid
+                    openConversation(db, uid, displayName, peer) { error ->
+                        openingPeerUid = ""
+                        if (error == null) selectedPeer = peer
+                        else directoryError = "Gagal membuka chat dari notifikasi: $error"
+                    }
+                } else {
+                    directoryError = "Pengirim notifikasi belum menjadi teman kamu."
                 }
             } else if (directoryUsers.isNotEmpty()) {
                 directoryError = "Pengirim notifikasi tidak ditemukan di daftar pengguna."
@@ -805,34 +820,45 @@ private fun UserArea(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    items(directoryUsers, key = { it.peer.uid }) { item ->
-                        TextButton(
-                            onClick = {
-                                openingPeerUid = item.peer.uid
-                                openConversation(db, uid, displayName, item.peer) { error ->
-                                    openingPeerUid = ""
-                                    if (error == null) selectedPeer = item.peer.copy(photoBase64 = item.photoBase64)
-                                    else directoryError = "Gagal membuka chat: $error"
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = openingPeerUid.isBlank() || openingPeerUid == item.peer.uid
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                ProfileAvatar(item.photoBase64, 42.dp)
-                                Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                                    Text(item.peer.name, color = TextDark, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                                }
-                                if (openingPeerUid == item.peer.uid) {
-                                    CircularProgressIndicator(Modifier.height(20.dp), color = Burgundy, strokeWidth = 2.dp)
-                                } else {
-                                    Text("CHAT  ›", color = Burgundy, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
+                    val incoming = directoryUsers.filter { friendships[conversationId(uid, it.peer.uid)]?.let { f -> f.status == "pending" && f.recipientUid == uid } == true }
+                    val friends = directoryUsers.filter { friendships[conversationId(uid, it.peer.uid)]?.status == "accepted" }
+                    val others = directoryUsers.filter { item ->
+                        val f = friendships[conversationId(uid, item.peer.uid)]
+                        f?.status != "accepted" && !(f?.status == "pending" && f.recipientUid == uid)
+                    }
+                    item { Text("PERMINTAAN MASUK (${incoming.size})", color = Burgundy, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp)) }
+                    if (incoming.isEmpty()) item { Text("Belum ada permintaan teman.", color = TextMuted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp)) }
+                    items(incoming, key = { "incoming_${it.peer.uid}" }) { item ->
+                        FriendDirectoryRow(item, "TERIMA", "TOLAK", openingPeerUid == item.peer.uid,
+                            onPrimary = { openingPeerUid = item.peer.uid; respondFriendRequest(db, uid, item.peer.uid, "accepted") { e -> openingPeerUid = ""; if (e != null) directoryError = e } },
+                            onSecondary = { openingPeerUid = item.peer.uid; respondFriendRequest(db, uid, item.peer.uid, "rejected") { e -> openingPeerUid = ""; if (e != null) directoryError = e } })
+                    }
+                    item { Text("TEMAN SAYA (${friends.size})", color = Burgundy, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp)) }
+                    if (friends.isEmpty()) item { Text("Belum ada teman yang terhubung.", color = TextMuted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp)) }
+                    items(friends, key = { "friend_${it.peer.uid}" }) { item ->
+                        FriendDirectoryRow(item, "CHAT", null, openingPeerUid == item.peer.uid,
+                            onPrimary = { openingPeerUid = item.peer.uid; openConversation(db, uid, displayName, item.peer) { e -> openingPeerUid = ""; if (e == null) selectedPeer = item.peer else directoryError = "Gagal membuka chat: $e" } },
+                            onSecondary = {})
+                    }
+                    item { Text("SEMUA PENGGUNA", color = Burgundy, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp)) }
+                    items(others, key = { "user_${it.peer.uid}" }) { item ->
+                        val link = friendships[conversationId(uid, item.peer.uid)]
+                        val label = when {
+                            openingPeerUid == item.peer.uid -> "MEMPROSES..."
+                            link?.status == "pending" && link.requesterUid == uid -> "MENUNGGU"
+                            link?.status == "rejected" && link.requesterUid == uid -> "KIRIM ULANG"
+                            link?.status == "rejected" -> "DITOLAK"
+                            else -> "TAMBAH TEMAN"
                         }
+                        FriendDirectoryRow(item, label, null, openingPeerUid == item.peer.uid,
+                            onPrimary = {
+                                openingPeerUid = item.peer.uid
+                                if (link?.status == "rejected" && link.requesterUid == uid) {
+                                    resendFriendRequest(db, uid, item.peer.uid) { e -> openingPeerUid = ""; if (e != null) directoryError = e }
+                                } else if (link == null) {
+                                    sendFriendRequest(db, uid, displayName, item.peer) { e -> openingPeerUid = ""; if (e != null) directoryError = e }
+                                } else openingPeerUid = ""
+                            }, onSecondary = {})
                     }
                 }
             }
@@ -869,6 +895,7 @@ private fun friendlyAuthError(error: Exception?): String {
 
 private data class ChatPeer(val uid: String, val name: String, val photoBase64: String = "")
 private data class DirectoryUser(val peer: ChatPeer, val photoBase64: String = "")
+private data class FriendLink(val status: String, val requesterUid: String, val recipientUid: String)
 private data class ChatMessage(val id: String, val senderUid: String, val text: String, val createdAt: Timestamp?, val readAt: Timestamp?)
 
 @Composable
@@ -930,6 +957,40 @@ private fun conversationId(firstUid: String, secondUid: String): String {
     return digest.joinToString("") { byte -> "%02x".format(byte) }
 }
 
+@Composable
+private fun FriendDirectoryRow(item: DirectoryUser, primaryLabel: String, secondaryLabel: String?, busy: Boolean, onPrimary: () -> Unit, onSecondary: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        ProfileAvatar(item.photoBase64, 42.dp)
+        Column(Modifier.weight(1f).padding(start = 10.dp)) { Text(item.peer.name, color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+        if (busy) CircularProgressIndicator(Modifier.size(20.dp), color = Burgundy, strokeWidth = 2.dp)
+        else {
+            TextButton(onClick = onPrimary, enabled = primaryLabel !in listOf("MENUNGGU", "DITOLAK", "MEMPROSES...")) { Text(primaryLabel, color = Burgundy, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+            if (secondaryLabel != null) TextButton(onClick = onSecondary) { Text(secondaryLabel, color = TextMuted, fontSize = 10.sp) }
+        }
+    }
+}
+
+private fun sendFriendRequest(db: FirebaseFirestore, uid: String, name: String, peer: ChatPeer, done: (String?) -> Unit) {
+    val ref = db.collection("friendships").document(conversationId(uid, peer.uid))
+    ref.get().addOnSuccessListener { snap ->
+        if (snap.exists()) done("Permintaan atau hubungan teman sudah tercatat.")
+        else ref.set(mapOf("users" to listOf(uid, peer.uid).sorted(), "requesterUid" to uid, "recipientUid" to peer.uid, "requesterName" to name, "status" to "pending", "requestedAt" to FieldValue.serverTimestamp()))
+            .addOnSuccessListener { done(null) }.addOnFailureListener { e -> done("Gagal mengirim permintaan: ${e.localizedMessage ?: "Coba lagi."}") }
+    }.addOnFailureListener { e -> done("Gagal memeriksa pertemanan: ${e.localizedMessage ?: "Coba lagi."}") }
+}
+
+private fun resendFriendRequest(db: FirebaseFirestore, uid: String, peerUid: String, done: (String?) -> Unit) {
+    db.collection("friendships").document(conversationId(uid, peerUid))
+        .update(mapOf("status" to "pending", "requesterUid" to uid, "requestedAt" to FieldValue.serverTimestamp(), "respondedAt" to FieldValue.delete()))
+        .addOnSuccessListener { done(null) }.addOnFailureListener { e -> done("Gagal mengirim ulang: ${e.localizedMessage ?: "Coba lagi."}") }
+}
+
+private fun respondFriendRequest(db: FirebaseFirestore, uid: String, peerUid: String, status: String, done: (String?) -> Unit) {
+    db.collection("friendships").document(conversationId(uid, peerUid))
+        .update(mapOf("status" to status, "respondedAt" to FieldValue.serverTimestamp()))
+        .addOnSuccessListener { done(null) }.addOnFailureListener { e -> done("Gagal memperbarui permintaan: ${e.localizedMessage ?: "Coba lagi."}") }
+}
+
 private fun openConversation(
     db: FirebaseFirestore, currentUid: String, currentName: String,
     peer: ChatPeer, onFinished: (String?) -> Unit
@@ -941,6 +1002,7 @@ private fun openConversation(
         else {
             val data = hashMapOf<String, Any>(
                 "members" to listOf(currentUid, peer.uid).sorted(),
+                "friendshipId" to id,
                 "memberInfo" to mapOf(
                     currentUid to mapOf("displayName" to currentName),
                     peer.uid to mapOf("displayName" to peer.name)
