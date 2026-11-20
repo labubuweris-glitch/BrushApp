@@ -129,7 +129,7 @@ service cloud.firestore {
                        && request.resource.data.status in ['accepted', 'rejected']
                        && request.resource.data.requesterUid == resource.data.requesterUid
                        && request.resource.data.recipientUid == resource.data.recipientUid
-                       && request.resource.data.respondedAt == request.time)
+                       && request.resource.data.respondedAt is timestamp)
                       ||
                       (resource.data.status == 'rejected'
                        && request.auth.uid == resource.data.requesterUid
