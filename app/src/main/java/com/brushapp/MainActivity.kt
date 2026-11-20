@@ -483,7 +483,8 @@ private fun UserArea(
     var searchText by remember { mutableStateOf("") }
     var searchOpen by remember { mutableStateOf(false) }
     var searchHasFocus by remember { mutableStateOf(false) }
-    val focusManager = LocalFocusManager.current    var directoryUsers by remember(uid) { mutableStateOf<List<DirectoryUser>>(emptyList()) }
+    val focusManager = LocalFocusManager.current
+    var directoryUsers by remember(uid) { mutableStateOf<List<DirectoryUser>>(emptyList()) }
     var directoryLoading by remember(uid) { mutableStateOf(true) }
     var directoryError by remember(uid) { mutableStateOf("") }
     var conversationIds by remember(uid) { mutableStateOf<List<String>>(emptyList()) }
@@ -882,7 +883,8 @@ private fun UserArea(
                 )
                 TextButton(onClick = {
                     searchText = ""
-                    searchOpen = false                    searchHasFocus = false
+                    searchOpen = false
+                    searchHasFocus = false
                     focusManager.clearFocus(force = true)
                 }) {
                     Text("✕", color = TextMuted, fontSize = 20.sp)
