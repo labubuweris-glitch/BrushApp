@@ -81,6 +81,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.messaging.FirebaseMessaging
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
@@ -566,6 +567,9 @@ private fun UserArea(
     var selectedPeer by remember { mutableStateOf<ChatPeer?>(null) }
     var openingPeerUid by remember { mutableStateOf("") }
     var showExitDialog by remember { mutableStateOf(false) }
+    var unreadCounts by remember(uid) { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    val acceptedFriends = directoryUsers.filter { friendships[conversationId(uid, it.peer.uid)]?.status == "accepted" }
+    val acceptedFriendIdsKey = acceptedFriends.map { it.peer.uid }.sorted().joinToString("|")
 
     BackHandler(enabled = true) {
         when {
@@ -648,7 +652,46 @@ private fun UserArea(
         onDispose { listener.remove(); requesterListener.remove(); recipientListener.remove() }
     }
 
+    // Pantau pesan masuk yang belum dibaca untuk setiap teman.
+    // Hitungan memakai readAt yang sudah dipakai sistem status baca saat ini.
+    DisposableEffect(db, uid, acceptedFriendIdsKey) {
+        var active = true
+        val registrations = mutableListOf<ListenerRegistration>()
+        val messageListeners = mutableMapOf<String, ListenerRegistration>()
+        unreadCounts = acceptedFriends.associate { it.peer.uid to (unreadCounts[it.peer.uid] ?: 0) }
 
+        acceptedFriends.forEach { item ->
+            val peerUid = item.peer.uid
+            val conversationRef = db.collection("conversations").document(conversationId(uid, peerUid))
+            val conversationListener = conversationRef.addSnapshotListener { conversationSnapshot, exception ->
+                if (!active) return@addSnapshotListener
+                if (exception != null) {
+                    unreadCounts = unreadCounts + (peerUid to 0)
+                } else if (conversationSnapshot != null && conversationSnapshot.exists()) {
+                    if (!messageListeners.containsKey(peerUid)) {
+                        val messageListener = conversationRef.collection("messages")
+                            .whereEqualTo("senderUid", peerUid)
+                            .addSnapshotListener { messageSnapshot, messageException ->
+                                if (!active) return@addSnapshotListener
+                                if (messageException == null && messageSnapshot != null) {
+                                    val count = messageSnapshot.documents.count { !it.contains("readAt") }
+                                    unreadCounts = unreadCounts + (peerUid to count)
+                                }
+                            }
+                        messageListeners[peerUid] = messageListener
+                        registrations.add(messageListener)
+                    }
+                } else {
+                    unreadCounts = unreadCounts + (peerUid to 0)
+                }
+            }
+            registrations.add(conversationListener)
+        }
+        onDispose {
+            active = false
+            registrations.forEach { it.remove() }
+        }
+    }
 
     LaunchedEffect(notificationRequestId, notificationPeerUid, directoryUsers, directoryLoading, loadingProfile, friendships) {
         if (notificationPeerUid.isNotBlank() && !directoryLoading && !loadingProfile) {
@@ -922,7 +965,7 @@ private fun UserArea(
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     val incoming = directoryUsers.filter { friendships[conversationId(uid, it.peer.uid)]?.let { f -> f.status == "pending" && f.recipientUid == uid } == true }
-                    val friends = directoryUsers.filter { friendships[conversationId(uid, it.peer.uid)]?.status == "accepted" }
+                    val friends = acceptedFriends
                     val others = directoryUsers.filter { item ->
                         val f = friendships[conversationId(uid, item.peer.uid)]
                         f?.status != "accepted" && !(f?.status == "pending" && f.recipientUid == uid)
@@ -964,7 +1007,8 @@ private fun UserArea(
                     items(friends, key = { "friend_${it.peer.uid}" }) { item ->
                         FriendDirectoryRow(item, "CHAT", null, openingPeerUid == item.peer.uid,
                             onPrimary = { openingPeerUid = item.peer.uid; openConversation(db, uid, displayName, item.peer) { e -> openingPeerUid = ""; if (e == null) selectedPeer = item.peer else directoryError = "Gagal membuka chat: $e" } },
-                            onSecondary = {})
+                            onSecondary = {},
+                            unreadCount = unreadCounts[item.peer.uid] ?: 0)
                     }
                     item { Text("SEMUA PENGGUNA", color = Burgundy, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp)) }
                     items(others, key = { "user_${it.peer.uid}" }) { item ->
@@ -1092,10 +1136,18 @@ private fun conversationId(firstUid: String, secondUid: String): String {
 }
 
 @Composable
-private fun FriendDirectoryRow(item: DirectoryUser, primaryLabel: String, secondaryLabel: String?, busy: Boolean, onPrimary: () -> Unit, onSecondary: () -> Unit) {
+private fun FriendDirectoryRow(item: DirectoryUser, primaryLabel: String, secondaryLabel: String?, busy: Boolean, onPrimary: () -> Unit, onSecondary: () -> Unit, unreadCount: Int = 0) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         ProfileAvatar(item.photoBase64, 42.dp)
         Column(Modifier.weight(1f).padding(start = 10.dp)) { Text(item.peer.name, color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+        if (unreadCount > 0) {
+            Box(
+                modifier = Modifier.padding(end = 4.dp).background(Burgundy, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(unreadCount.toString(), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
         if (busy) CircularProgressIndicator(Modifier.size(20.dp), color = Burgundy, strokeWidth = 2.dp)
         else {
             TextButton(onClick = onPrimary, enabled = primaryLabel !in listOf("MENUNGGU", "DITOLAK", "MEMPROSES...")) { Text(primaryLabel, color = Burgundy, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
