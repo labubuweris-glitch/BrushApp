@@ -483,34 +483,18 @@ private fun UserArea(
             }
         }
     }
-    var searchText by remember { mutableStateOf("") }
-    var searchOpen by remember { mutableStateOf(false) }
-    var searchHasFocus by remember { mutableStateOf(false) }
-    val focusManager = LocalFocusManager.current
     var directoryUsers by remember(uid) { mutableStateOf<List<DirectoryUser>>(emptyList()) }
     var directoryLoading by remember(uid) { mutableStateOf(true) }
     var directoryError by remember(uid) { mutableStateOf("") }
-    var conversationIds by remember(uid) { mutableStateOf<List<String>>(emptyList()) }
-    var conversationLoading by remember(uid) { mutableStateOf(true) }
     var selectedPeer by remember { mutableStateOf<ChatPeer?>(null) }
     var openingPeerUid by remember { mutableStateOf("") }
     var showExitDialog by remember { mutableStateOf(false) }
-    var isRefreshing by remember { mutableStateOf(false) }
-    var refreshVersion by remember(uid) { mutableStateOf(0) }
-    var directoryRefreshDone by remember(uid) { mutableStateOf(true) }
-    var conversationRefreshDone by remember(uid) { mutableStateOf(true) }
 
     BackHandler(enabled = true) {
         when {
             showExitDialog -> showExitDialog = false
-            selectedPeer != null -> { selectedPeer = null; searchText = "" }
+            selectedPeer != null -> selectedPeer = null
             editingProfile -> { editingProfile = false; profileError = "" }
-            searchHasFocus || searchText.isNotBlank() -> {
-                searchText = ""
-                searchHasFocus = false
-                focusManager.clearFocus(force = true)
-            }
-            searchOpen -> searchOpen = false
             else -> showExitDialog = true
         }
     }
@@ -536,24 +520,7 @@ private fun UserArea(
         )
     }
 
-    fun refreshHome() {
-        if (isRefreshing) return
-        isRefreshing = true
-        directoryError = ""
-        searchText = ""
-        searchHasFocus = false
-        focusManager.clearFocus(force = true)
-
-        directoryRefreshDone = false
-        conversationRefreshDone = false
-        directoryLoading = true
-        conversationLoading = true
-
-        // Jalankan ulang mekanisme listener yang sama seperti saat halaman utama dibuka.
-        refreshVersion += 1
-    }
-
-    DisposableEffect(db, uid, refreshVersion) {
+    DisposableEffect(db, uid) {
         directoryLoading = true
         directoryError = ""
         val listener = db.collection("user_directory")
@@ -562,8 +529,6 @@ private fun UserArea(
                 if (exception != null) {
                     directoryError = exception.localizedMessage ?: "Tidak dapat memuat daftar pengguna."
                     directoryLoading = false
-                    directoryRefreshDone = true
-                    if (conversationRefreshDone) isRefreshing = false
                 } else if (snapshot != null) {
                     directoryUsers = snapshot.documents.mapNotNull { doc ->
                         val peerUid = doc.getString("uid") ?: doc.id
@@ -575,37 +540,12 @@ private fun UserArea(
                     }
                     directoryError = ""
                     directoryLoading = false
-                    directoryRefreshDone = true
-                    if (conversationRefreshDone) isRefreshing = false
                 }
             }
         onDispose { listener.remove() }
     }
 
-    DisposableEffect(db, uid, refreshVersion) {
-        conversationLoading = true
-        val listener = db.collection("conversations")
-            .whereArrayContains("members", uid)
-            .addSnapshotListener { snapshot, exception ->
-                if (exception != null) {
-                    directoryError = exception.localizedMessage ?: "Tidak dapat memuat percakapan."
-                    conversationLoading = false
-                    conversationRefreshDone = true
-                    if (directoryRefreshDone) isRefreshing = false
-                } else if (snapshot != null) {
-                    conversationIds = snapshot.documents
-                        .filter { it.getString("lastMessage").orEmpty().isNotBlank() }
-                        .sortedByDescending { it.getTimestamp("updatedAt")?.toDate()?.time ?: 0L }
-                        .mapNotNull { doc ->
-                            (doc.get("members") as? List<*>)?.filterIsInstance<String>()?.firstOrNull { it != uid }
-                        }
-                    conversationLoading = false
-                    conversationRefreshDone = true
-                    if (directoryRefreshDone) isRefreshing = false
-                }
-            }
-        onDispose { listener.remove() }
-    }
+
 
     LaunchedEffect(notificationRequestId, notificationPeerUid, directoryUsers, directoryLoading, loadingProfile) {
         if (notificationPeerUid.isNotBlank() && !directoryLoading && !loadingProfile) {
@@ -651,7 +591,7 @@ private fun UserArea(
     }
 
     if (selectedPeer != null) {
-        ChatScreen(db, uid, selectedPeer!!) { selectedPeer = null; searchText = "" }
+        ChatScreen(db, uid, selectedPeer!!) { selectedPeer = null }
         return
     }
 
@@ -745,13 +685,6 @@ private fun UserArea(
         return
     }
 
-    val filteredUsers = directoryUsers.filter { item ->
-        searchText.trim().isNotBlank() && item.peer.name.contains(searchText.trim(), ignoreCase = true)
-    }
-    val chatUsers = conversationIds.mapNotNull { peerUid ->
-        directoryUsers.firstOrNull { it.peer.uid == peerUid }?.peer
-    }
-
     Column(
         modifier = Modifier.fillMaxSize().background(Background).imePadding().padding(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.Top
@@ -763,26 +696,6 @@ private fun UserArea(
             if (!editingProfile) {
                 Column(Modifier.weight(1f)) {
                     Text("BrushApp", color = Burgundy, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                    Text("Halo, $displayName!", color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                }
-                TextButton(onClick = {
-                    searchOpen = true
-                }) {
-                    Text("⌕", color = Burgundy, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                }
-                TextButton(
-                    onClick = { refreshHome() },
-                    enabled = !isRefreshing
-                ) {
-                    if (isRefreshing) {
-                        CircularProgressIndicator(
-                            Modifier.size(20.dp),
-                            color = Burgundy,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text("⟳", color = Burgundy, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                    }
                 }
                 TextButton(onClick = {
                     editedName = displayName
@@ -865,67 +778,26 @@ private fun UserArea(
             }
         } else {
         Spacer(Modifier.height(18.dp))
-        Text(if (searchText.isBlank()) "CHAT" else "HASIL PENCARIAN", color = Burgundy, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        if (searchOpen) {
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = searchText,
-                    onValueChange = { searchText = it },
-                    modifier = Modifier.weight(1f).onFocusChanged { searchHasFocus = it.isFocused },
-                    label = { Text("Cari pengguna BrushApp") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-                    shape = RoundedCornerShape(13.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Burgundy,
-                        focusedLabelColor = Burgundy,
-                        cursorColor = Burgundy,
-                        unfocusedBorderColor = Color(0xFFD8D2D6)
-                    )
-                )
-                TextButton(onClick = {
-                    searchText = ""
-                    searchOpen = false
-                    searchHasFocus = false
-                    focusManager.clearFocus(force = true)
-                }) {
-                    Text("✕", color = TextMuted, fontSize = 20.sp)
-                }
-            }
-        }
+        Text("SEMUA PENGGUNA", color = Burgundy, fontSize = 16.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
-        val showUsers = searchText.isNotBlank()
-        val shownUsers = if (showUsers) filteredUsers else chatUsers.map { peer ->
-            directoryUsers.firstOrNull { it.peer.uid == peer.uid } ?: DirectoryUser(peer, peer.photoBase64)
-        }
         when {
-            showUsers && directoryLoading -> {
+            directoryLoading -> {
                 Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = Burgundy)
                     Spacer(Modifier.height(10.dp))
-                    Text("Mencari pengguna...", color = TextMuted)
+                    Text("Memuat anggota BrushApp...", color = TextMuted)
                 }
             }
-            !showUsers && conversationLoading -> {
+            directoryError.isNotBlank() -> {
                 Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = Burgundy)
-                    Spacer(Modifier.height(10.dp))
-                    Text("Memuat chat...", color = TextMuted)
+                    Text("Daftar pengguna belum dapat dimuat.", color = TextMuted, fontSize = 14.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Text(directoryError, color = TextMuted, fontSize = 12.sp)
                 }
             }
-            shownUsers.isEmpty() -> {
+            directoryUsers.isEmpty() -> {
                 Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        if (showUsers) "Pengguna tidak ditemukan."
-                        else "Belum ada percakapan.",
-                        color = TextMuted,
-                        fontSize = 14.sp
-                    )
-                    if (!showUsers) {
-                        Spacer(Modifier.height(6.dp))
-                        Text("Cari teman untuk memulai chat.", color = TextMuted, fontSize = 12.sp)
-                    }
+                    Text("Belum ada anggota lain.", color = TextMuted, fontSize = 14.sp)
                 }
             }
             else -> {
@@ -933,7 +805,7 @@ private fun UserArea(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    items(shownUsers, key = { it.peer.uid }) { item ->
+                    items(directoryUsers, key = { it.peer.uid }) { item ->
                         TextButton(
                             onClick = {
                                 openingPeerUid = item.peer.uid
@@ -956,7 +828,7 @@ private fun UserArea(
                                 }
                                 if (openingPeerUid == item.peer.uid) {
                                     CircularProgressIndicator(Modifier.height(20.dp), color = Burgundy, strokeWidth = 2.dp)
-                                } else if (showUsers) {
+                                } else {
                                     Text("CHAT  ›", color = Burgundy, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
