@@ -569,7 +569,7 @@ private fun UserArea(
     var showExitDialog by remember { mutableStateOf(false) }
     var unreadCounts by remember(uid) { mutableStateOf<Map<String, Int>>(emptyMap()) }
     var conversationPreviews by remember(uid) { mutableStateOf<Map<String, ConversationPreview>>(emptyMap()) }
-    var selectedTab by remember(uid) { mutableStateOf("Teman") }
+    var selectedTab by remember(uid) { mutableStateOf("Pesan") }
     val acceptedFriends = directoryUsers.filter { friendships[conversationId(uid, it.peer.uid)]?.status == "accepted" }
     val acceptedFriendIdsKey = acceptedFriends.map { it.peer.uid }.sorted().joinToString("|")
 
@@ -868,10 +868,14 @@ private fun UserArea(
     val quietFriends = acceptedFriends.filterNot { conversationPreviews.containsKey(it.peer.uid) }
 
     Column(Modifier.fillMaxSize().background(Background).imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(selectedTab, color = Burgundy, fontSize = 27.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            if (selectedTab == "Profil" && editingProfile) {
-                TextButton(onClick = { editingProfile = false; profileError = "" }) { Text("SELESAI", color = Burgundy) }
+        if (selectedTab == "Pesan" || (selectedTab == "Profil" && editingProfile)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (selectedTab == "Pesan") {
+                    Text("BrushApp", color = Burgundy, fontSize = 27.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                } else {
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { editingProfile = false; profileError = "" }) { Text("SELESAI", color = Burgundy) }
+                }
             }
         }
         when (selectedTab) {
@@ -912,7 +916,7 @@ private fun UserArea(
                         val f = friendships[conversationId(uid, item.peer.uid)]
                         f?.status != "accepted" && !(f?.status == "pending" && f.recipientUid == uid)
                     }
-                    item { Text("PERMINTAAN PERTEMANAN (${incoming.size})", color = Burgundy, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp)) }
+                    item { Text("permintaan", color = TextMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp, bottom = 5.dp)) }
                     if (incoming.isEmpty()) item { Text("Belum ada permintaan teman.", color = TextMuted, fontSize = 12.sp) }
                     items(incoming, key = { "incoming_${it.peer.uid}" }) { item ->
                         FriendDirectoryRow(item, "TERIMA", "TOLAK", openingPeerUid == item.peer.uid,
@@ -935,7 +939,7 @@ private fun UserArea(
                                 }
                             })
                     }
-                    item { Text("TEMAN BELUM PERNAH CHAT (${quietFriends.size})", color = Burgundy, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp)) }
+                    item { Text("teman", color = TextMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp, bottom = 5.dp)) }
                     if (quietFriends.isEmpty()) item { Text("Semua teman sudah memiliki percakapan.", color = TextMuted, fontSize = 12.sp) }
                     items(quietFriends, key = { "friend_${it.peer.uid}" }) { item ->
                         FriendDirectoryRow(item, "CHAT", null, openingPeerUid == item.peer.uid,
@@ -947,7 +951,7 @@ private fun UserArea(
                                 }
                             }, onSecondary = {})
                     }
-                    item { Text("PENGGUNA BRUSHAPP (${others.size})", color = Burgundy, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp)) }
+                    item { Text("saran teman", color = TextMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp, bottom = 5.dp)) }
                     if (others.isEmpty()) item { Text("Tidak ada pengguna lain saat ini.", color = TextMuted, fontSize = 12.sp) }
                     items(others, key = { "user_${it.peer.uid}" }) { item ->
                         val link = friendships[conversationId(uid, item.peer.uid)]
@@ -956,7 +960,7 @@ private fun UserArea(
                             link?.status == "pending" && link.requesterUid == uid -> "MENUNGGU"
                             link?.status == "rejected" && link.requesterUid == uid -> "KIRIM ULANG"
                             link?.status == "rejected" -> "DITOLAK"
-                            else -> "TAMBAH TEMAN"
+                            else -> "tambah teman"
                         }
                         FriendDirectoryRow(item, label, null, openingPeerUid == item.peer.uid,
                             onPrimary = {
