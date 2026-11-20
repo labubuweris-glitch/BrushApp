@@ -742,11 +742,6 @@ private fun UserArea(
                     Text("Memuat chat...", color = TextMuted)
                 }
             }
-            directoryError.isNotBlank() -> {
-                Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Gagal memuat: $directoryError", color = Burgundy, fontSize = 13.sp)
-                }
-            }
             shownUsers.isEmpty() -> {
                 Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
