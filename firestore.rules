@@ -162,16 +162,31 @@ service cloud.firestore {
                     && request.resource.data.friendshipId == conversationId
                     && acceptedFriendship(conversationId, request.resource.data.members[0], request.resource.data.members[1]);
 
+      // Izinkan migrasi satu kali untuk ruang chat lama yang belum memiliki friendshipId.
+      // Migrasi hanya boleh menambahkan friendshipId yang cocok; tidak boleh mengubah isi chat.
+      // Setelah itu, update pesan mengikuti aturan normal di bawah.
       allow update: if conversationAllowed(resource.data, conversationId)
                     && request.resource.data.members == resource.data.members
-                    && request.resource.data.friendshipId == conversationId
                     && request.resource.data.memberInfo == resource.data.memberInfo
                     && request.resource.data.createdBy == resource.data.createdBy
-                    && request.resource.data.diff(resource.data).affectedKeys()
-                         .hasOnly(['lastMessage', 'lastSenderUid', 'updatedAt', 'friendshipId'])
-                    && request.resource.data.lastSenderUid == request.auth.uid
-                    && request.resource.data.lastMessage is string
-                    && request.resource.data.lastMessage.size() <= 4000;
+                    && (
+                      (
+                        !resource.data.keys().hasAny(['friendshipId'])
+                        && request.resource.data.friendshipId == conversationId
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                             .hasOnly(['friendshipId'])
+                      )
+                      ||
+                      (
+                        resource.data.friendshipId == conversationId
+                        && request.resource.data.friendshipId == conversationId
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                             .hasOnly(['lastMessage', 'lastSenderUid', 'updatedAt'])
+                        && request.resource.data.lastSenderUid == request.auth.uid
+                        && request.resource.data.lastMessage is string
+                        && request.resource.data.lastMessage.size() <= 4000
+                      )
+                    );
 
       allow delete: if false;
 
