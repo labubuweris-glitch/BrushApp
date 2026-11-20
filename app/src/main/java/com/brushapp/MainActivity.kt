@@ -331,6 +331,7 @@ private fun UserArea(
         }
     }
     var searchText by remember { mutableStateOf("") }
+    var searchOpen by remember { mutableStateOf(false) }
     var searchHasFocus by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     var directoryUsers by remember(uid) { mutableStateOf<List<DirectoryUser>>(emptyList()) }
@@ -356,6 +357,7 @@ private fun UserArea(
                 searchHasFocus = false
                 focusManager.clearFocus(force = true)
             }
+            searchOpen -> searchOpen = false
             else -> showExitDialog = true
         }
     }
@@ -610,6 +612,11 @@ private fun UserArea(
                     Text("BrushApp", color = Burgundy, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                     Text("Halo, $displayName!", color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 }
+                TextButton(onClick = {
+                    searchOpen = true
+                }) {
+                    Text("⌕", color = Burgundy, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                }
                 TextButton(
                     onClick = { refreshHome() },
                     enabled = !isRefreshing
@@ -706,22 +713,34 @@ private fun UserArea(
         } else {
         Spacer(Modifier.height(18.dp))
         Text(if (searchText.isBlank()) "CHAT" else "HASIL PENCARIAN", color = Burgundy, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
-            value = searchText,
-            onValueChange = { searchText = it },
-            modifier = Modifier.fillMaxWidth().onFocusChanged { searchHasFocus = it.isFocused },
-            label = { Text("Cari pengguna BrushApp") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-            shape = RoundedCornerShape(13.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Burgundy,
-                focusedLabelColor = Burgundy,
-                cursorColor = Burgundy,
-                unfocusedBorderColor = Color(0xFFD8D2D6)
-            )
-        )
+        if (searchOpen) {
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = searchText,
+                    onValueChange = { searchText = it },
+                    modifier = Modifier.weight(1f).onFocusChanged { searchHasFocus = it.isFocused },
+                    label = { Text("Cari pengguna BrushApp") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                    shape = RoundedCornerShape(13.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Burgundy,
+                        focusedLabelColor = Burgundy,
+                        cursorColor = Burgundy,
+                        unfocusedBorderColor = Color(0xFFD8D2D6)
+                    )
+                )
+                TextButton(onClick = {
+                    searchText = ""
+                    searchOpen = false
+                    searchHasFocus = false
+                    focusManager.clearFocus(force = true)
+                }) {
+                    Text("✕", color = TextMuted, fontSize = 20.sp)
+                }
+            }
+        }
         Spacer(Modifier.height(10.dp))
         val showUsers = searchText.isNotBlank()
         val shownUsers = if (showUsers) filteredUsers else chatUsers.map { peer ->
