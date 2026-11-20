@@ -1071,8 +1071,21 @@ private fun openConversation(
     val id = conversationId(currentUid, peer.uid)
     val ref = db.collection("conversations").document(id)
     ref.get().addOnSuccessListener { snapshot ->
-        if (snapshot.exists()) onFinished(null)
-        else {
+        if (snapshot.exists()) {
+            val existingFriendshipId = snapshot.getString("friendshipId")
+            if (existingFriendshipId == id) {
+                onFinished(null)
+            } else if (existingFriendshipId.isNullOrBlank()) {
+                // Migrasi ruang chat lama tanpa menghapus riwayat pesan.
+                ref.update("friendshipId", id)
+                    .addOnSuccessListener { onFinished(null) }
+                    .addOnFailureListener { e ->
+                        onFinished(e.localizedMessage ?: "Tidak dapat memperbarui ruang chat lama")
+                    }
+            } else {
+                onFinished("Data pertemanan ruang chat tidak cocok.")
+            }
+        } else {
             val data = hashMapOf<String, Any>(
                 "members" to listOf(currentUid, peer.uid).sorted(),
                 "friendshipId" to id,
