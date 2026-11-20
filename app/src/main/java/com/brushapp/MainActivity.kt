@@ -994,7 +994,7 @@ private fun friendlyAuthError(error: Exception?): String {
 
 private data class ChatPeer(val uid: String, val name: String, val photoBase64: String = "")
 private data class DirectoryUser(val peer: ChatPeer, val photoBase64: String = "")
-private data class ChatMessage(val id: String, val senderUid: String, val text: String, val createdAt: Timestamp?)
+private data class ChatMessage(val id: String, val senderUid: String, val text: String, val createdAt: Timestamp?, val readAt: Timestamp?)
 
 @Composable
 private fun ProfileAvatar(photoBase64: String, diameter: androidx.compose.ui.unit.Dp) {
@@ -1092,6 +1092,7 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
     var sending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val pendingReadIds = remember(id) { mutableSetOf<String>() }
 
     DisposableEffect(id) {
         val listener = conversation.collection("messages")
@@ -1101,7 +1102,22 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
                     loading = false
                 } else if (snapshot != null) {
                     messages = snapshot.documents.map { doc ->
-                        ChatMessage(doc.id, doc.getString("senderUid").orEmpty(), doc.getString("text").orEmpty(), doc.getTimestamp("createdAt"))
+                        ChatMessage(doc.id, doc.getString("senderUid").orEmpty(), doc.getString("text").orEmpty(), doc.getTimestamp("createdAt"), doc.getTimestamp("readAt"))
+                    }
+                    val unreadIncoming = snapshot.documents.filter { doc ->
+                        doc.getString("senderUid") != currentUid &&
+                            !doc.contains("readAt") &&
+                            !pendingReadIds.contains(doc.id)
+                    }
+                    unreadIncoming.chunked(450).forEach { unreadBatch ->
+                        val batch = db.batch()
+                        unreadBatch.forEach { doc ->
+                            pendingReadIds.add(doc.id)
+                            batch.update(doc.reference, "readAt", FieldValue.serverTimestamp())
+                        }
+                        batch.commit().addOnFailureListener {
+                            unreadBatch.forEach { doc -> pendingReadIds.remove(doc.id) }
+                        }
                     }
                     loading = false
                 }
@@ -1175,6 +1191,14 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text(formatMessageTime(message.createdAt), color = TextMuted, fontSize = 10.sp)
+                                if (mine) {
+                                    Text(
+                                        "✓",
+                                        color = if (message.readAt != null) Burgundy else Color(0xFF9A9699),
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                     }
