@@ -856,7 +856,12 @@ private fun UserArea(
                                 if (link?.status == "rejected" && link.requesterUid == uid) {
                                     resendFriendRequest(db, uid, item.peer.uid) { e -> openingPeerUid = ""; if (e != null) directoryError = e }
                                 } else if (link == null) {
-                                    sendFriendRequest(db, uid, displayName, item.peer) { e -> openingPeerUid = ""; if (e != null) directoryError = e }
+                                    sendFriendRequest(db, uid, displayName, item.peer) { e ->
+                                        if (e == null) {
+                                            friendships = friendships + (conversationId(uid, item.peer.uid) to FriendLink("pending", uid, item.peer.uid))
+                                        } else directoryError = e
+                                        openingPeerUid = ""
+                                    }
                                 } else openingPeerUid = ""
                             }, onSecondary = {})
                     }
@@ -973,9 +978,15 @@ private fun FriendDirectoryRow(item: DirectoryUser, primaryLabel: String, second
 private fun sendFriendRequest(db: FirebaseFirestore, uid: String, name: String, peer: ChatPeer, done: (String?) -> Unit) {
     val ref = db.collection("friendships").document(conversationId(uid, peer.uid))
     ref.get().addOnSuccessListener { snap ->
-        if (snap.exists()) done("Permintaan atau hubungan teman sudah tercatat.")
-        else ref.set(mapOf("users" to listOf(uid, peer.uid).sorted(), "requesterUid" to uid, "recipientUid" to peer.uid, "requesterName" to name, "status" to "pending", "requestedAt" to FieldValue.serverTimestamp()))
-            .addOnSuccessListener { done(null) }.addOnFailureListener { e -> done("Gagal mengirim permintaan: ${e.localizedMessage ?: "Coba lagi."}") }
+        if (snap.exists()) {
+            val status = snap.getString("status").orEmpty()
+            val requester = snap.getString("requesterUid").orEmpty()
+            if (status == "pending" && requester == uid) done(null)
+            else done("Permintaan atau hubungan teman sudah tercatat.")
+        } else {
+            ref.set(mapOf("users" to listOf(uid, peer.uid).sorted(), "requesterUid" to uid, "recipientUid" to peer.uid, "requesterName" to name, "status" to "pending", "requestedAt" to FieldValue.serverTimestamp()))
+                .addOnSuccessListener { done(null) }.addOnFailureListener { e -> done("Gagal mengirim permintaan: ${e.localizedMessage ?: "Coba lagi."}") }
+        }
     }.addOnFailureListener { e -> done("Gagal memeriksa pertemanan: ${e.localizedMessage ?: "Coba lagi."}") }
 }
 
