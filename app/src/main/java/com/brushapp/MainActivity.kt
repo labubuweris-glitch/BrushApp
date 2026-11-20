@@ -22,6 +22,7 @@ import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.draw.clip
@@ -957,7 +958,7 @@ private fun UserArea(
                         val link = friendships[conversationId(uid, item.peer.uid)]
                         val label = when {
                             openingPeerUid == item.peer.uid -> "MEMPROSES..."
-                            link?.status == "pending" && link.requesterUid == uid -> "MENUNGGU"
+                            link?.status == "pending" && link.requesterUid == uid -> "tunggu konfirm"
                             link?.status == "rejected" && link.requesterUid == uid -> "KIRIM ULANG"
                             link?.status == "rejected" -> "DITOLAK"
                             else -> "tambah teman"
@@ -1148,7 +1149,7 @@ private fun FriendDirectoryRow(item: DirectoryUser, primaryLabel: String, second
         }
         if (busy) CircularProgressIndicator(Modifier.size(20.dp), color = Burgundy, strokeWidth = 2.dp)
         else {
-            TextButton(onClick = onPrimary, enabled = primaryLabel !in listOf("MENUNGGU", "DITOLAK", "MEMPROSES...")) { Text(primaryLabel, color = Burgundy, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+            TextButton(onClick = onPrimary, enabled = primaryLabel !in listOf("tunggu konfirm", "DITOLAK", "MEMPROSES...")) { Text(primaryLabel, color = Burgundy, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
             if (secondaryLabel != null) TextButton(onClick = onSecondary) { Text(secondaryLabel, color = TextMuted, fontSize = 10.sp) }
         }
     }
@@ -1156,7 +1157,10 @@ private fun FriendDirectoryRow(item: DirectoryUser, primaryLabel: String, second
 
 @Composable
 private fun ConversationDirectoryRow(item: DirectoryUser, preview: String, time: Timestamp?, unreadCount: Int, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         ProfileAvatar(item.photoBase64, 48.dp)
         Column(Modifier.weight(1f).padding(start = 11.dp)) {
             Text(item.peer.name, color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
@@ -1168,7 +1172,6 @@ private fun ConversationDirectoryRow(item: DirectoryUser, preview: String, time:
                 Text(unreadCount.toString(), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
-        TextButton(onClick = onClick) { Text("BUKA", color = Burgundy, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
     }
 }
 
