@@ -187,9 +187,14 @@ private fun BrushAppRoot(notificationPeerUid: String, notificationPeerName: Stri
         }
     }
 
-    if (currentUser == null) {
-        AuthScreen(auth)
-    } else if (currentUser!!.isEmailVerified) {
+    LaunchedEffect(currentUser?.uid) {
+        val signedInUser = currentUser
+        if (signedInUser != null && !signedInUser.isEmailVerified) {
+            auth.signOut()
+        }
+    }
+
+    if (currentUser?.isEmailVerified == true) {
         UserArea(
             user = currentUser!!,
             notificationPeerUid = notificationPeerUid,
@@ -198,9 +203,6 @@ private fun BrushAppRoot(notificationPeerUid: String, notificationPeerName: Stri
             onSignOut = { auth.signOut() }
         )
     } else {
-        LaunchedEffect(currentUser!!.uid) {
-            auth.signOut()
-        }
         AuthScreen(auth)
     }
 }
@@ -282,13 +284,17 @@ private fun AuthScreen(auth: FirebaseAuth) {
                                     if (result.isSuccessful) {
                                         val createdUser = auth.currentUser
                                         if (createdUser != null) {
+                                            auth.setLanguageCode("id")
                                             createdUser.sendEmailVerification()
                                                 .addOnCompleteListener { verification ->
                                                     auth.signOut()
+                                                    isRegister = false
+                                                    confirmPassword = ""
+                                                    password = ""
                                                     message = if (verification.isSuccessful) {
-                                                        "Akun berhasil dibuat. Silakan cek email untuk verifikasi sebelum masuk."
+                                                        "Pendaftaran berhasil! Kami telah mengirimkan tautan verifikasi ke alamat email Anda.\n\nSilakan buka email Anda dan klik tautan verifikasi untuk mengaktifkan akun. Setelah berhasil diverifikasi, kembali ke BrushApp dan masuk menggunakan email serta kata sandi Anda.\n\nBelum menerima email? Periksa folder Spam atau coba kirim ulang email verifikasi."
                                                     } else {
-                                                        "Akun berhasil dibuat, tetapi email verifikasi gagal dikirim. Coba masuk lagi untuk mengirim ulang."
+                                                        "Akun berhasil dibuat, tetapi email verifikasi gagal dikirim. Periksa koneksi internet Anda, lalu masuk untuk mencoba mengirim ulang tautan verifikasi."
                                                     }
                                                 }
                                         } else {
