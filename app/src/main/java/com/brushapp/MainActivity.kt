@@ -568,6 +568,8 @@ private fun UserArea(
     var openingPeerUid by remember { mutableStateOf("") }
     var showExitDialog by remember { mutableStateOf(false) }
     var unreadCounts by remember(uid) { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    var conversationPreviews by remember(uid) { mutableStateOf<Map<String, ConversationPreview>>(emptyMap()) }
+    var selectedTab by remember(uid) { mutableStateOf("Teman") }
     val acceptedFriends = directoryUsers.filter { friendships[conversationId(uid, it.peer.uid)]?.status == "accepted" }
     val acceptedFriendIdsKey = acceptedFriends.map { it.peer.uid }.sorted().joinToString("|")
 
@@ -690,6 +692,31 @@ private fun UserArea(
         onDispose {
             active = false
             registrations.forEach { it.remove() }
+        }
+    }
+
+    // Percakapan masuk ke tab Pesan hanya setelah pesan pertama tersimpan.
+    DisposableEffect(db, uid, acceptedFriendIdsKey) {
+        var active = true
+        val listeners = mutableListOf<ListenerRegistration>()
+        val currentIds = acceptedFriends.map { it.peer.uid }.toSet()
+        conversationPreviews = conversationPreviews.filterKeys { it in currentIds }
+        acceptedFriends.forEach { item ->
+            val peerUid = item.peer.uid
+            val ref = db.collection("conversations").document(conversationId(uid, peerUid))
+            listeners.add(ref.addSnapshotListener { snapshot, exception ->
+                if (!active || exception != null) return@addSnapshotListener
+                if (snapshot != null && snapshot.exists()) {
+                    val lastMessage = snapshot.getString("lastMessage").orEmpty()
+                    if (lastMessage.isNotBlank()) {
+                        conversationPreviews = conversationPreviews + (peerUid to ConversationPreview(lastMessage, snapshot.getTimestamp("updatedAt")))
+                    } else conversationPreviews = conversationPreviews - peerUid
+                } else conversationPreviews = conversationPreviews - peerUid
+            })
+        }
+        onDispose {
+            active = false
+            listeners.forEach { it.remove() }
         }
     }
 
@@ -836,181 +863,92 @@ private fun UserArea(
         return
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().background(Background).imePadding().padding(horizontal = 18.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.Top
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (!editingProfile) {
-                Column(Modifier.weight(1f)) {
-                    Text("BrushApp", color = Burgundy, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                }
-                TextButton(onClick = {
-                    editedName = displayName
-                    editedPhoto = profilePhoto
-                    editingProfile = true
-                    profileError = ""
-                }) { Text("PROFIL", color = Burgundy, fontWeight = FontWeight.Bold) }
-            } else {
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = { editingProfile = false; profileError = "" }) {
-                    Text("SELESAI", color = Burgundy, fontWeight = FontWeight.Bold)
-                }
+    val messageFriends = acceptedFriends.filter { conversationPreviews.containsKey(it.peer.uid) }
+        .sortedByDescending { conversationPreviews[it.peer.uid]?.updatedAt?.toDate()?.time ?: 0L }
+    val quietFriends = acceptedFriends.filterNot { conversationPreviews.containsKey(it.peer.uid) }
+
+    Column(Modifier.fillMaxSize().background(Background).imePadding()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(selectedTab, color = Burgundy, fontSize = 27.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            if (selectedTab == "Profil" && editingProfile) {
+                TextButton(onClick = { editingProfile = false; profileError = "" }) { Text("SELESAI", color = Burgundy) }
             }
         }
-        if (editingProfile) {
-            Column(Modifier.fillMaxWidth().background(Color(0xFFFFF8FA), RoundedCornerShape(14.dp)).padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    ProfileAvatar(editedPhoto, 68.dp)
-                    Column(Modifier.padding(start = 12.dp).weight(1f)) {                        Text("FOTO PROFIL", color = TextDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        TextButton(onClick = { photoPicker.launch("image/*") }) {
-                            Text("PILIH DARI GALERI", color = Burgundy)
-                        }
+        when (selectedTab) {
+            "Pesan" -> {
+                when {
+                    directoryLoading -> Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = Burgundy); Spacer(Modifier.height(10.dp)); Text("Memuat percakapan...", color = TextMuted)
                     }
-                }
-                OutlinedTextField(
-                    value = editedName,
-                    onValueChange = { editedName = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Nama pengguna") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp)
-                )
-                if (profileError.isNotBlank()) Text(profileError, color = Burgundy, fontSize = 12.sp)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = { editingProfile = false; profileError = "" }) {
-                        Text("BATAL", color = TextMuted)
+                    messageFriends.isEmpty() -> Column(Modifier.weight(1f).fillMaxWidth().padding(28.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Belum ada percakapan", color = TextDark, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(6.dp)); Text("Pesan dari teman akan muncul di sini.", color = TextMuted, fontSize = 13.sp)
                     }
-                    TextButton(enabled = !savingProfile, onClick = {
-                        val cleanName = editedName.trim()
-                        when {
-                            cleanName.length < 2 -> profileError = "Nama minimal 2 karakter."
-                            cleanName.length > 30 -> profileError = "Nama maksimal 30 karakter."
-                            else -> {
-                                savingProfile = true
-                                val profileData = mapOf(
-                                    "uid" to uid,
-                                    "displayName" to cleanName,
-                                    "photoBase64" to editedPhoto,
-                                    "updatedAt" to FieldValue.serverTimestamp()
-                                )
-                                val batch = db.batch()
-                                batch.set(db.collection("users").document(uid), profileData, SetOptions.merge())
-                                batch.set(db.collection("user_directory").document(uid), profileData, SetOptions.merge())
-                                batch.commit().addOnSuccessListener {
-                                    displayName = cleanName
-                                    profilePhoto = editedPhoto
-                                    savingProfile = false
-                                    editingProfile = false
-                                    profileError = ""
-                                }.addOnFailureListener { e ->
-                                    savingProfile = false
-                                    profileError = "Gagal menyimpan profil: ${e.localizedMessage ?: "Coba lagi."}"
-                                }
+                    else -> LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp)) {
+                        items(messageFriends, key = { "conversation_${it.peer.uid}" }) { item ->
+                            val preview = conversationPreviews[item.peer.uid]
+                            ConversationDirectoryRow(item, preview?.lastMessage.orEmpty(), preview?.updatedAt, unreadCounts[item.peer.uid] ?: 0) {
+                                selectedPeer = item.peer
                             }
                         }
-                    }) {
-                        Text(if (savingProfile) "MENYIMPAN..." else "SIMPAN", color = Burgundy, fontWeight = FontWeight.Bold)
                     }
                 }
             }
-                Spacer(Modifier.height(12.dp))
-        }
-        if (editingProfile) {
-            Spacer(Modifier.weight(1f))
-            TextButton(
-                onClick = onSignOut,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            ) {
-                Text("Keluar dari Akun", color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold)
-            }
-        } else {
-        Spacer(Modifier.height(18.dp))
-        Text("SEMUA PENGGUNA", color = Burgundy, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        if (friendshipError.isNotBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text(friendshipError, color = Color(0xFFD32F2F), fontSize = 12.sp)
-        }
-        if (friendActionError.isNotBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text(friendActionError, color = TextMuted, fontSize = 12.sp)
-        }
-        Spacer(Modifier.height(10.dp))
-        when {
-            directoryLoading -> {
-                Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = Burgundy)
-                    Spacer(Modifier.height(10.dp))
-                    Text("Memuat anggota BrushApp...", color = TextMuted)
+            "Teman" -> {
+                if (friendshipError.isNotBlank() || friendActionError.isNotBlank() || directoryError.isNotBlank()) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
+                        if (friendshipError.isNotBlank()) Text(friendshipError, color = Color(0xFFD32F2F), fontSize = 12.sp)
+                        if (friendActionError.isNotBlank()) Text(friendActionError, color = TextMuted, fontSize = 12.sp)
+                        if (directoryError.isNotBlank()) Text(directoryError, color = TextMuted, fontSize = 12.sp)
+                    }
                 }
-            }
-            directoryError.isNotBlank() -> {
-                Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Daftar pengguna belum dapat dimuat.", color = TextMuted, fontSize = 14.sp)
-                    Spacer(Modifier.height(6.dp))
-                    Text(directoryError, color = TextMuted, fontSize = 12.sp)
-                }
-            }
-            directoryUsers.isEmpty() -> {
-                Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Belum ada anggota lain.", color = TextMuted, fontSize = 14.sp)
-                }
-            }
-            else -> {
-                LazyColumn(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
+                if (directoryLoading) {
+                    Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = Burgundy); Spacer(Modifier.height(10.dp)); Text("Memuat teman...", color = TextMuted)
+                    }
+                } else LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     val incoming = directoryUsers.filter { friendships[conversationId(uid, it.peer.uid)]?.let { f -> f.status == "pending" && f.recipientUid == uid } == true }
-                    val friends = acceptedFriends
                     val others = directoryUsers.filter { item ->
                         val f = friendships[conversationId(uid, item.peer.uid)]
                         f?.status != "accepted" && !(f?.status == "pending" && f.recipientUid == uid)
                     }
-                    item { Text("PERMINTAAN MASUK (${incoming.size})", color = Burgundy, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp)) }
-                    if (incoming.isEmpty()) item { Text("Belum ada permintaan teman.", color = TextMuted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp)) }
+                    item { Text("PERMINTAAN PERTEMANAN (${incoming.size})", color = Burgundy, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp)) }
+                    if (incoming.isEmpty()) item { Text("Belum ada permintaan teman.", color = TextMuted, fontSize = 12.sp) }
                     items(incoming, key = { "incoming_${it.peer.uid}" }) { item ->
                         FriendDirectoryRow(item, "TERIMA", "TOLAK", openingPeerUid == item.peer.uid,
                             onPrimary = {
                                 openingPeerUid = item.peer.uid
                                 respondFriendRequest(db, uid, item.peer.uid, "accepted") { e ->
-                                    val key = conversationId(uid, item.peer.uid)
-                                    val currentLink = friendships[key]
-                                    if (e == null && currentLink != null) {
-                                        friendships = friendships + (key to FriendLink("accepted", currentLink.requesterUid, currentLink.recipientUid))
-                                        friendActionError = ""
-                                    } else if (e != null) {
-                                        friendActionError = e
-                                    }
+                                    val key = conversationId(uid, item.peer.uid); val old = friendships[key]
+                                    if (e == null && old != null) { friendships = friendships + (key to FriendLink("accepted", old.requesterUid, old.recipientUid)); friendActionError = "" }
+                                    else if (e != null) friendActionError = e
                                     openingPeerUid = ""
                                 }
                             },
                             onSecondary = {
                                 openingPeerUid = item.peer.uid
                                 respondFriendRequest(db, uid, item.peer.uid, "rejected") { e ->
-                                    val key = conversationId(uid, item.peer.uid)
-                                    val currentLink = friendships[key]
-                                    if (e == null && currentLink != null) {
-                                        friendships = friendships + (key to FriendLink("rejected", currentLink.requesterUid, currentLink.recipientUid))
-                                    } else if (e != null) {
-                                        friendActionError = e
-                                    }
+                                    val key = conversationId(uid, item.peer.uid); val old = friendships[key]
+                                    if (e == null && old != null) friendships = friendships + (key to FriendLink("rejected", old.requesterUid, old.recipientUid))
+                                    else if (e != null) friendActionError = e
                                     openingPeerUid = ""
                                 }
                             })
                     }
-                    item { Text("TEMAN SAYA (${friends.size})", color = Burgundy, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp)) }
-                    if (friends.isEmpty()) item { Text("Belum ada teman yang terhubung.", color = TextMuted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp)) }
-                    items(friends, key = { "friend_${it.peer.uid}" }) { item ->
+                    item { Text("TEMAN BELUM PERNAH CHAT (${quietFriends.size})", color = Burgundy, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp)) }
+                    if (quietFriends.isEmpty()) item { Text("Semua teman sudah memiliki percakapan.", color = TextMuted, fontSize = 12.sp) }
+                    items(quietFriends, key = { "friend_${it.peer.uid}" }) { item ->
                         FriendDirectoryRow(item, "CHAT", null, openingPeerUid == item.peer.uid,
-                            onPrimary = { openingPeerUid = item.peer.uid; openConversation(db, uid, displayName, item.peer) { e -> openingPeerUid = ""; if (e == null) selectedPeer = item.peer else directoryError = "Gagal membuka chat: $e" } },
-                            onSecondary = {},
-                            unreadCount = unreadCounts[item.peer.uid] ?: 0)
+                            onPrimary = {
+                                openingPeerUid = item.peer.uid
+                                openConversation(db, uid, displayName, item.peer) { e ->
+                                    openingPeerUid = ""
+                                    if (e == null) selectedPeer = item.peer else directoryError = "Gagal membuka chat: $e"
+                                }
+                            }, onSecondary = {})
                     }
-                    item { Text("SEMUA PENGGUNA", color = Burgundy, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp)) }
+                    item { Text("PENGGUNA BRUSHAPP (${others.size})", color = Burgundy, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp)) }
+                    if (others.isEmpty()) item { Text("Tidak ada pengguna lain saat ini.", color = TextMuted, fontSize = 12.sp) }
                     items(others, key = { "user_${it.peer.uid}" }) { item ->
                         val link = friendships[conversationId(uid, item.peer.uid)]
                         val label = when {
@@ -1024,15 +962,11 @@ private fun UserArea(
                             onPrimary = {
                                 openingPeerUid = item.peer.uid
                                 if (link?.status == "rejected" && link.requesterUid == uid) {
-                                    resendFriendRequest(db, uid, item.peer.uid) { e -> openingPeerUid = ""; if (e != null) directoryError = e }
+                                    resendFriendRequest(db, uid, item.peer.uid) { e -> openingPeerUid = ""; if (e != null) friendActionError = e }
                                 } else if (link == null) {
-                                    sendFriendRequest(db, uid, displayName, item.peer) { existingLink, error ->
-                                        if (error == null && existingLink != null) {
-                                            friendships = friendships + (conversationId(uid, item.peer.uid) to existingLink)
-                                            friendActionError = ""
-                                        } else if (error != null) {
-                                            friendActionError = error
-                                        }
+                                    sendFriendRequest(db, uid, displayName, item.peer) { existing, error ->
+                                        if (error == null && existing != null) { friendships = friendships + (conversationId(uid, item.peer.uid) to existing); friendActionError = "" }
+                                        else if (error != null) friendActionError = error
                                         openingPeerUid = ""
                                     }
                                 } else openingPeerUid = ""
@@ -1040,8 +974,64 @@ private fun UserArea(
                     }
                 }
             }
+            "Profil" -> {
+                Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Spacer(Modifier.height(12.dp))
+                    ProfileAvatar(if (editingProfile) editedPhoto else profilePhoto, 92.dp)
+                    Spacer(Modifier.height(12.dp))
+                    Text(if (editingProfile) "EDIT PROFIL" else displayName, color = TextDark, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text(email, color = TextMuted, fontSize = 13.sp)
+                    Spacer(Modifier.height(22.dp))
+                    if (editingProfile) {
+                        OutlinedTextField(value = editedName, onValueChange = { editedName = it; profileError = "" }, modifier = Modifier.fillMaxWidth(), label = { Text("Nama pengguna") }, singleLine = true, shape = RoundedCornerShape(12.dp))
+                        Spacer(Modifier.height(8.dp))
+                        Button(onClick = { photoPicker.launch("image/*") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF5E5EB), contentColor = Burgundy)) { Text("PILIH FOTO DARI GALERI") }
+                        if (profileError.isNotBlank()) Text(profileError, color = Burgundy, fontSize = 12.sp)
+                        Spacer(Modifier.height(14.dp))
+                        Button(enabled = !savingProfile, onClick = {
+                            val cleanName = editedName.trim()
+                            when {
+                                cleanName.length < 2 -> profileError = "Nama minimal 2 karakter."
+                                cleanName.length > 30 -> profileError = "Nama maksimal 30 karakter."
+                                else -> {
+                                    savingProfile = true
+                                    val data = mapOf("uid" to uid, "displayName" to cleanName, "photoBase64" to editedPhoto, "updatedAt" to FieldValue.serverTimestamp())
+                                    val batch = db.batch()
+                                    batch.set(db.collection("users").document(uid), data, SetOptions.merge())
+                                    batch.set(db.collection("user_directory").document(uid), data, SetOptions.merge())
+                                    batch.commit().addOnSuccessListener {
+                                        displayName = cleanName; profilePhoto = editedPhoto; savingProfile = false; editingProfile = false; profileError = ""
+                                    }.addOnFailureListener { e ->
+                                        savingProfile = false; profileError = "Gagal menyimpan profil: ${e.localizedMessage ?: "Coba lagi."}"
+                                    }
+                                }
+                            }
+                        }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Burgundy)) {
+                            Text(if (savingProfile) "MENYIMPAN..." else "SIMPAN PERUBAHAN", color = Color.White)
+                        }
+                        TextButton(onClick = { editedName = displayName; editedPhoto = profilePhoto; editingProfile = false; profileError = "" }) { Text("BATAL", color = TextMuted) }
+                    } else {
+                        Button(onClick = { editedName = displayName; editedPhoto = profilePhoto; editingProfile = true; profileError = "" }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Burgundy)) { Text("EDIT PROFIL", color = Color.White) }
+                        Spacer(Modifier.height(12.dp))
+                        Text("PENGATURAN AKUN", color = TextDark, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Start))
+                        Text("Email: $email", color = TextMuted, fontSize = 13.sp, modifier = Modifier.align(Alignment.Start).padding(top = 6.dp))
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = onSignOut) { Text("KELUAR DARI AKUN", color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold) }
+                    }
+                }
+            }
         }
-        }
+        Row(Modifier.fillMaxWidth().background(Color(0xFFFFF8FA)).padding(horizontal = 8.dp, vertical = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+            listOf("Pesan", "Teman", "Profil").forEach { tab ->
+                TextButton(onClick = {
+                    selectedTab = tab
+                    if (tab != "Profil") { editingProfile = false; profileError = "" }
+                }) {
+                    Text(when(tab) { "Pesan" -> "✉  Pesan"; "Teman" -> "♧  Teman"; else -> "●  Profil" },
+                        color = if (selectedTab == tab) Burgundy else TextMuted,
+                        fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Medium)
+                }
+            }
         }
     }
 
@@ -1075,6 +1065,7 @@ private data class ChatPeer(val uid: String, val name: String, val photoBase64: 
 private data class DirectoryUser(val peer: ChatPeer, val photoBase64: String = "")
 private data class FriendLink(val status: String, val requesterUid: String, val recipientUid: String)
 private data class ChatMessage(val id: String, val senderUid: String, val text: String, val createdAt: Timestamp?, val readAt: Timestamp?)
+private data class ConversationPreview(val lastMessage: String, val updatedAt: Timestamp?)
 
 @Composable
 private fun ProfileAvatar(photoBase64: String, diameter: androidx.compose.ui.unit.Dp) {
@@ -1155,6 +1146,24 @@ private fun FriendDirectoryRow(item: DirectoryUser, primaryLabel: String, second
             TextButton(onClick = onPrimary, enabled = primaryLabel !in listOf("MENUNGGU", "DITOLAK", "MEMPROSES...")) { Text(primaryLabel, color = Burgundy, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
             if (secondaryLabel != null) TextButton(onClick = onSecondary) { Text(secondaryLabel, color = TextMuted, fontSize = 10.sp) }
         }
+    }
+}
+
+@Composable
+private fun ConversationDirectoryRow(item: DirectoryUser, preview: String, time: Timestamp?, unreadCount: Int, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+        ProfileAvatar(item.photoBase64, 48.dp)
+        Column(Modifier.weight(1f).padding(start = 11.dp)) {
+            Text(item.peer.name, color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(preview, color = TextMuted, fontSize = 12.sp, maxLines = 1)
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            if (time != null) Text(formatMessageTime(time), color = TextMuted, fontSize = 10.sp)
+            if (unreadCount > 0) Box(Modifier.padding(top = 5.dp).background(Burgundy, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 4.dp), contentAlignment = Alignment.Center) {
+                Text(unreadCount.toString(), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        TextButton(onClick = onClick) { Text("BUKA", color = Burgundy, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
     }
 }
 
