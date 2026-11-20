@@ -1034,6 +1034,7 @@ private fun UserArea(
             }
         }
     }
+}
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
