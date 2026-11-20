@@ -342,6 +342,9 @@ private fun UserArea(
     var openingPeerUid by remember { mutableStateOf("") }
     var showExitDialog by remember { mutableStateOf(false) }
     var isRefreshing by remember { mutableStateOf(false) }
+    var refreshVersion by remember(uid) { mutableStateOf(0) }
+    var directoryRefreshDone by remember(uid) { mutableStateOf(true) }
+    var conversationRefreshDone by remember(uid) { mutableStateOf(true) }
 
     BackHandler(enabled = true) {
         when {
@@ -386,61 +389,26 @@ private fun UserArea(
         searchHasFocus = false
         focusManager.clearFocus(force = true)
 
-        var pending = 2
-        fun finishOne() {
-            pending -= 1
-            if (pending == 0) isRefreshing = false
-        }
+        directoryRefreshDone = false
+        conversationRefreshDone = false
+        directoryLoading = true
+        conversationLoading = true
 
-        db.collection("user_directory")
-            .orderBy("displayName", Query.Direction.ASCENDING)
-            .get(com.google.firebase.firestore.Source.SERVER)
-            .addOnSuccessListener { snapshot ->
-                directoryUsers = snapshot.documents.mapNotNull { doc ->
-                    val peerUid = doc.getString("uid") ?: doc.id
-                    if (peerUid == uid) return@mapNotNull null
-                    val name = doc.getString("displayName").orEmpty()
-                    if (name.isBlank()) return@mapNotNull null
-                    val photo = doc.getString("photoBase64").orEmpty()
-                    DirectoryUser(ChatPeer(peerUid, name, photo), photo)
-                }
-                directoryLoading = false
-                finishOne()
-            }
-            .addOnFailureListener { error ->
-                directoryError = error.localizedMessage ?: "Tidak dapat memuat daftar pengguna."
-                finishOne()
-            }
-
-        db.collection("conversations")
-            .whereArrayContains("members", uid)
-            .get(com.google.firebase.firestore.Source.SERVER)
-            .addOnSuccessListener { snapshot ->
-                conversationIds = snapshot.documents
-                    .filter { it.getString("lastMessage").orEmpty().isNotBlank() }
-                    .sortedByDescending { it.getTimestamp("updatedAt")?.toDate()?.time ?: 0L }
-                    .mapNotNull { doc ->
-                        (doc.get("members") as? List<*>)?.filterIsInstance<String>()?.firstOrNull { it != uid }
-                    }
-                conversationLoading = false
-                finishOne()
-            }
-            .addOnFailureListener { error ->
-                if (directoryError.isBlank()) {
-                    directoryError = error.localizedMessage ?: "Tidak dapat memuat percakapan."
-                }
-                finishOne()
-            }
+        // Jalankan ulang mekanisme listener yang sama seperti saat halaman utama dibuka.
+        refreshVersion += 1
     }
 
-    DisposableEffect(db, uid) {
+    DisposableEffect(db, uid, refreshVersion) {
         directoryLoading = true
+        directoryError = ""
         val listener = db.collection("user_directory")
             .orderBy("displayName", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, exception ->
                 if (exception != null) {
                     directoryError = exception.localizedMessage ?: "Tidak dapat memuat daftar pengguna."
                     directoryLoading = false
+                    directoryRefreshDone = true
+                    if (conversationRefreshDone) isRefreshing = false
                 } else if (snapshot != null) {
                     directoryUsers = snapshot.documents.mapNotNull { doc ->
                         val peerUid = doc.getString("uid") ?: doc.id
@@ -452,12 +420,14 @@ private fun UserArea(
                     }
                     directoryError = ""
                     directoryLoading = false
+                    directoryRefreshDone = true
+                    if (conversationRefreshDone) isRefreshing = false
                 }
             }
         onDispose { listener.remove() }
     }
 
-    DisposableEffect(db, uid) {
+    DisposableEffect(db, uid, refreshVersion) {
         conversationLoading = true
         val listener = db.collection("conversations")
             .whereArrayContains("members", uid)
@@ -465,6 +435,8 @@ private fun UserArea(
                 if (exception != null) {
                     directoryError = exception.localizedMessage ?: "Tidak dapat memuat percakapan."
                     conversationLoading = false
+                    conversationRefreshDone = true
+                    if (directoryRefreshDone) isRefreshing = false
                 } else if (snapshot != null) {
                     conversationIds = snapshot.documents
                         .filter { it.getString("lastMessage").orEmpty().isNotBlank() }
@@ -473,6 +445,8 @@ private fun UserArea(
                             (doc.get("members") as? List<*>)?.filterIsInstance<String>()?.firstOrNull { it != uid }
                         }
                     conversationLoading = false
+                    conversationRefreshDone = true
+                    if (directoryRefreshDone) isRefreshing = false
                 }
             }
         onDispose { listener.remove() }
