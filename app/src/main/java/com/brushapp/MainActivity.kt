@@ -211,6 +211,9 @@ private fun AuthScreen(auth: FirebaseAuth) {
     var passwordVisible by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var showResetDialog by remember { mutableStateOf(false) }
+    var resetEmail by remember { mutableStateOf("") }
+    var resetBusy by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier.fillMaxSize().background(Background).imePadding().padding(horizontal = 28.dp),
@@ -234,6 +237,18 @@ private fun AuthScreen(auth: FirebaseAuth) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = passwordVisible, onCheckedChange = { passwordVisible = it })
             Text("Tampilkan password", color = TextMuted, fontSize = 13.sp)
+        }
+        if (!isRegister) {
+            TextButton(
+                onClick = {
+                    resetEmail = email
+                    showResetDialog = true
+                    message = ""
+                },
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Text("Lupa Kata Sandi?", color = Burgundy, fontSize = 13.sp)
+            }
         }
         if (isRegister) {
             Spacer(Modifier.height(4.dp))
@@ -327,6 +342,77 @@ private fun AuthScreen(auth: FirebaseAuth) {
             Text(if (isRegister) "Sudah punya akun? Masuk" else "Belum punya akun? Daftar", color = Burgundy)
         }
     }
+
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!resetBusy) showResetDialog = false },
+            title = { Text("Lupa Kata Sandi?") },
+            text = {
+                Column {
+                    Text("Masukkan alamat email akun BrushApp. Kami akan mengirim tautan untuk membuat kata sandi baru.")
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = resetEmail,
+                        onValueChange = { resetEmail = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Alamat email") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        shape = RoundedCornerShape(13.dp)
+                    )
+                    if (resetBusy) {
+                        Spacer(Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(Modifier.height(18.dp), color = Burgundy, strokeWidth = 2.dp)
+                            Spacer(Modifier.width(10.dp))
+                            Text("Mengirim email...", color = TextMuted, fontSize = 13.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !resetBusy,
+                    onClick = {
+                        val cleanResetEmail = resetEmail.trim()
+                        when {
+                            cleanResetEmail.isBlank() -> message = "Alamat email wajib diisi."
+                            !android.util.Patterns.EMAIL_ADDRESS.matcher(cleanResetEmail).matches() -> message = "Format email belum benar."
+                            else -> {
+                                resetBusy = true
+                                auth.setLanguageCode("id")
+                                auth.sendPasswordResetEmail(cleanResetEmail)
+                                    .addOnCompleteListener { result ->
+                                        resetBusy = false
+                                        showResetDialog = false
+                                        message = if (result.isSuccessful) {
+                                            "Jika email terdaftar, tautan untuk mengatur ulang kata sandi akan dikirim. Silakan periksa kotak masuk email."
+                                        } else {
+                                            val raw = result.exception?.message.orEmpty()
+                                            when {
+                                                raw.contains("network", ignoreCase = true) -> "Koneksi internet bermasalah. Coba lagi."
+                                                raw.contains("too many", ignoreCase = true) -> "Terlalu banyak percobaan. Coba lagi nanti."
+                                                else -> "Email pemulihan gagal dikirim. Periksa alamat email atau coba lagi nanti."
+                                            }
+                                        }
+                                    }
+                            }
+                        }
+                    }
+                ) {
+                    Text("KIRIM TAUTAN", color = Burgundy)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !resetBusy,
+                    onClick = { showResetDialog = false }
+                ) {
+                    Text("BATAL", color = TextMuted)
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -397,8 +483,7 @@ private fun UserArea(
     var searchText by remember { mutableStateOf("") }
     var searchOpen by remember { mutableStateOf(false) }
     var searchHasFocus by remember { mutableStateOf(false) }
-    val focusManager = LocalFocusManager.current
-    var directoryUsers by remember(uid) { mutableStateOf<List<DirectoryUser>>(emptyList()) }
+    val focusManager = LocalFocusManager.current    var directoryUsers by remember(uid) { mutableStateOf<List<DirectoryUser>>(emptyList()) }
     var directoryLoading by remember(uid) { mutableStateOf(true) }
     var directoryError by remember(uid) { mutableStateOf("") }
     var conversationIds by remember(uid) { mutableStateOf<List<String>>(emptyList()) }
@@ -797,8 +882,7 @@ private fun UserArea(
                 )
                 TextButton(onClick = {
                     searchText = ""
-                    searchOpen = false
-                    searchHasFocus = false
+                    searchOpen = false                    searchHasFocus = false
                     focusManager.clearFocus(force = true)
                 }) {
                     Text("✕", color = TextMuted, fontSize = 20.sp)
