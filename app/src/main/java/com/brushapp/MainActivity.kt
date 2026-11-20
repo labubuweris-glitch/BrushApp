@@ -557,7 +557,7 @@ private fun UserArea(
 
 
 
-    LaunchedEffect(notificationRequestId, notificationPeerUid, directoryUsers, directoryLoading, loadingProfile) {
+    LaunchedEffect(notificationRequestId, notificationPeerUid, directoryUsers, directoryLoading, loadingProfile, friendships) {
         if (notificationPeerUid.isNotBlank() && !directoryLoading && !loadingProfile) {
             val peer = directoryUsers.firstOrNull { it.peer.uid == notificationPeerUid }?.peer
             if (peer != null) {
