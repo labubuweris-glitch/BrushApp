@@ -835,8 +835,33 @@ private fun UserArea(
                     if (incoming.isEmpty()) item { Text("Belum ada permintaan teman.", color = TextMuted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp)) }
                     items(incoming, key = { "incoming_${it.peer.uid}" }) { item ->
                         FriendDirectoryRow(item, "TERIMA", "TOLAK", openingPeerUid == item.peer.uid,
-                            onPrimary = { openingPeerUid = item.peer.uid; respondFriendRequest(db, uid, item.peer.uid, "accepted") { e -> openingPeerUid = ""; if (e != null) directoryError = e } },
-                            onSecondary = { openingPeerUid = item.peer.uid; respondFriendRequest(db, uid, item.peer.uid, "rejected") { e -> openingPeerUid = ""; if (e != null) directoryError = e } })
+                            onPrimary = {
+                                openingPeerUid = item.peer.uid
+                                respondFriendRequest(db, uid, item.peer.uid, "accepted") { e ->
+                                    val key = conversationId(uid, item.peer.uid)
+                                    val currentLink = friendships[key]
+                                    if (e == null && currentLink != null) {
+                                        friendships = friendships + (key to FriendLink("accepted", currentLink.requesterUid, currentLink.recipientUid))
+                                        friendActionError = ""
+                                    } else if (e != null) {
+                                        friendActionError = e
+                                    }
+                                    openingPeerUid = ""
+                                }
+                            },
+                            onSecondary = {
+                                openingPeerUid = item.peer.uid
+                                respondFriendRequest(db, uid, item.peer.uid, "rejected") { e ->
+                                    val key = conversationId(uid, item.peer.uid)
+                                    val currentLink = friendships[key]
+                                    if (e == null && currentLink != null) {
+                                        friendships = friendships + (key to FriendLink("rejected", currentLink.requesterUid, currentLink.recipientUid))
+                                    } else if (e != null) {
+                                        friendActionError = e
+                                    }
+                                    openingPeerUid = ""
+                                }
+                            })
                     }
                     item { Text("TEMAN SAYA (${friends.size})", color = Burgundy, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp)) }
                     if (friends.isEmpty()) item { Text("Belum ada teman yang terhubung.", color = TextMuted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp)) }
