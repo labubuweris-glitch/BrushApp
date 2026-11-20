@@ -208,8 +208,60 @@ private fun BrushAppRoot(notificationPeerUid: String, notificationPeerName: Stri
 }
 
 @Composable
+private fun VerificationPage(email: String, message: String, onContinue: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().background(Background).imePadding().padding(horizontal = 30.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("✉", color = Burgundy, fontSize = 58.sp)
+        Spacer(Modifier.height(18.dp))
+        Text(
+            "Verifikasi Email",
+            color = TextDark,
+            fontSize = 25.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(14.dp))
+        Text(
+            message,
+            color = TextMuted,
+            fontSize = 15.sp,
+            lineHeight = 23.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            email,
+            color = Burgundy,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        Spacer(Modifier.height(18.dp))
+        Text(
+            "Jika belum menerima email, periksa folder Spam atau Promosi.",
+            color = TextMuted,
+            fontSize = 13.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        Spacer(Modifier.height(30.dp))
+        Button(
+            onClick = onContinue,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(13.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Burgundy, contentColor = Color.White)
+        ) {
+            Text("MASUK", fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
 private fun AuthScreen(auth: FirebaseAuth) {
     var isRegister by remember { mutableStateOf(false) }
+    var showVerificationPage by remember { mutableStateOf(false) }
+    var verificationPageMessage by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -220,6 +272,17 @@ private fun AuthScreen(auth: FirebaseAuth) {
     var resetEmail by remember { mutableStateOf("") }
     var resetBusy by remember { mutableStateOf(false) }
 
+    if (showVerificationPage) {
+        VerificationPage(
+            email = email,
+            message = verificationPageMessage,
+            onContinue = {
+                showVerificationPage = false
+                isRegister = false
+                message = ""
+            }
+        )
+    } else {
     Column(
         modifier = Modifier.fillMaxSize().background(Background).imePadding().padding(horizontal = 28.dp),
         verticalArrangement = Arrangement.Center
@@ -288,18 +351,20 @@ private fun AuthScreen(auth: FirebaseAuth) {
                                             createdUser.sendEmailVerification()
                                                 .addOnCompleteListener { verification ->
                                                     auth.signOut()
-                                                    isRegister = false
                                                     confirmPassword = ""
                                                     password = ""
-                                                    message = if (verification.isSuccessful) {
-                                                        "Pendaftaran berhasil! Kami telah mengirimkan tautan verifikasi ke alamat email Anda.\n\nSilakan buka email Anda dan klik tautan verifikasi untuk mengaktifkan akun. Setelah berhasil diverifikasi, kembali ke BrushApp dan masuk menggunakan email serta kata sandi Anda.\n\nBelum menerima email? Periksa folder Spam atau coba kirim ulang email verifikasi."
+                                                    isRegister = false
+                                                    verificationPageMessage = if (verification.isSuccessful) {
+                                                        "Pendaftaran berhasil! Kami telah mengirimkan tautan verifikasi ke alamat email Anda. Buka email dan klik tautan verifikasi untuk mengaktifkan akun. Setelah itu, kembali ke BrushApp dan tekan MASUK."
                                                     } else {
-                                                        "Akun berhasil dibuat, tetapi email verifikasi gagal dikirim. Periksa koneksi internet Anda, lalu masuk untuk mencoba mengirim ulang tautan verifikasi."
+                                                        "Akun berhasil dibuat, tetapi email verifikasi gagal dikirim. Periksa koneksi internet Anda. Anda dapat masuk kembali untuk mencoba mengirim ulang tautan verifikasi."
                                                     }
+                                                    showVerificationPage = true
                                                 }
                                         } else {
                                             auth.signOut()
-                                            message = "Akun berhasil dibuat. Silakan masuk dan verifikasi email."
+                                            verificationPageMessage = "Akun berhasil dibuat. Silakan masuk dan verifikasi email Anda."
+                                            showVerificationPage = true
                                         }
                                     } else {
                                         message = friendlyAuthError(result.exception)
@@ -350,6 +415,7 @@ private fun AuthScreen(auth: FirebaseAuth) {
         ) {
             Text(if (isRegister) "Sudah punya akun? Masuk" else "Belum punya akun? Daftar", color = Burgundy)
         }
+    }
     }
 
     if (showResetDialog) {
