@@ -23,6 +23,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.draw.clip
@@ -44,6 +45,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -93,6 +95,16 @@ import java.net.URL
 import org.json.JSONObject
 
 private val Burgundy = Color(0xFF800020)
+private var AppAccent by mutableStateOf(Burgundy)
+
+private fun brushThemeColor(theme: String): Color = when (theme) {
+    "Biru" -> Color(0xFF1976D2)
+    "Hijau" -> Color(0xFF2E8B57)
+    "Kuning" -> Color(0xFFE0A800)
+    "Ungu" -> Color(0xFF7E57C2)
+    "Merah" -> Color(0xFFE53935)
+    else -> Color(0xFF800020)
+}
 private val Background = Color(0xFFFFFFFF)
 private val TextDark = Color(0xFF252126)
 private val TextMuted = Color(0xFF777078)
@@ -109,10 +121,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         readNotificationIntent(intent)
         createMessageNotificationChannel()
+        AppAccent = brushThemeColor(getSharedPreferences("brushapp_settings", MODE_PRIVATE).getString("theme", "Burgundy") ?: "Burgundy")
         setContent {
             MaterialTheme(
                 colorScheme = lightColorScheme(
-                    primary = Burgundy,
+                    primary = AppAccent,
                     onPrimary = Color.White,
                     background = Background,
                     surface = Background,
@@ -216,7 +229,7 @@ private fun VerificationPage(email: String, message: String, onContinue: () -> U
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("✉", color = Burgundy, fontSize = 58.sp)
+        Text("✉", color = AppAccent, fontSize = 58.sp)
         Spacer(Modifier.height(18.dp))
         Text(
             "Verifikasi Email",
@@ -235,7 +248,7 @@ private fun VerificationPage(email: String, message: String, onContinue: () -> U
         Spacer(Modifier.height(12.dp))
         Text(
             email,
-            color = Burgundy,
+            color = AppAccent,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -252,7 +265,7 @@ private fun VerificationPage(email: String, message: String, onContinue: () -> U
             onClick = onContinue,
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(13.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Burgundy, contentColor = Color.White)
+            colors = ButtonDefaults.buttonColors(containerColor = AppAccent, contentColor = Color.White)
         ) {
             Text("MASUK", fontWeight = FontWeight.Bold)
         }
@@ -289,7 +302,7 @@ private fun AuthScreen(auth: FirebaseAuth) {
         modifier = Modifier.fillMaxSize().background(Background).imePadding().padding(horizontal = 28.dp),
         verticalArrangement = Arrangement.Center
     ) {
-        Text("BrushApp", color = Burgundy, fontSize = 38.sp, fontWeight = FontWeight.Bold)
+        Text("BrushApp", color = AppAccent, fontSize = 38.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
         Text("Sederhana. Nyaman. Terhubung.", color = TextMuted, fontSize = 15.sp)
         Spacer(Modifier.height(38.dp))
@@ -317,7 +330,7 @@ private fun AuthScreen(auth: FirebaseAuth) {
                 },
                 modifier = Modifier.align(Alignment.End)
             ) {
-                Text("Lupa Kata Sandi?", color = Burgundy, fontSize = 13.sp)
+                Text("Lupa Kata Sandi?", color = AppAccent, fontSize = 13.sp)
             }
         }
         if (isRegister) {
@@ -329,7 +342,7 @@ private fun AuthScreen(auth: FirebaseAuth) {
         }
         if (message.isNotBlank()) {
             Spacer(Modifier.height(12.dp))
-            Text(message, color = Burgundy, fontSize = 13.sp)
+            Text(message, color = AppAccent, fontSize = 13.sp)
         }
         Spacer(Modifier.height(22.dp))
         Button(
@@ -405,7 +418,7 @@ private fun AuthScreen(auth: FirebaseAuth) {
             enabled = !busy,
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(13.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Burgundy, contentColor = Color.White)
+            colors = ButtonDefaults.buttonColors(containerColor = AppAccent, contentColor = Color.White)
         ) {
             if (busy) CircularProgressIndicator(Modifier.height(21.dp), color = Color.White, strokeWidth = 2.dp)
             else Text(if (isRegister) "Daftar" else "Masuk", fontWeight = FontWeight.Bold)
@@ -415,7 +428,7 @@ private fun AuthScreen(auth: FirebaseAuth) {
             onClick = { isRegister = !isRegister; message = ""; confirmPassword = "" },
             modifier = Modifier.align(Alignment.CenterHorizontally)
         ) {
-            Text(if (isRegister) "Sudah punya akun? Masuk" else "Belum punya akun? Daftar", color = Burgundy)
+            Text(if (isRegister) "Sudah punya akun? Masuk" else "Belum punya akun? Daftar", color = AppAccent)
         }
     }
     }
@@ -440,7 +453,7 @@ private fun AuthScreen(auth: FirebaseAuth) {
                     if (resetBusy) {
                         Spacer(Modifier.height(12.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(Modifier.height(18.dp), color = Burgundy, strokeWidth = 2.dp)
+                            CircularProgressIndicator(Modifier.height(18.dp), color = AppAccent, strokeWidth = 2.dp)
                             Spacer(Modifier.width(10.dp))
                             Text("Mengirim email...", color = TextMuted, fontSize = 13.sp)
                         }
@@ -477,7 +490,7 @@ private fun AuthScreen(auth: FirebaseAuth) {
                         }
                     }
                 ) {
-                    Text("KIRIM TAUTAN", color = Burgundy)
+                    Text("KIRIM TAUTAN", color = AppAccent)
                 }
             },
             dismissButton = {
@@ -512,7 +525,7 @@ private fun AuthField(
                                else androidx.compose.ui.text.input.VisualTransformation.None,
         shape = RoundedCornerShape(13.dp),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Burgundy, focusedLabelColor = Burgundy, cursorColor = Burgundy,
+            focusedBorderColor = AppAccent, focusedLabelColor = AppAccent, cursorColor = AppAccent,
             unfocusedBorderColor = Color(0xFFD8D2D6), focusedTextColor = TextDark, unfocusedTextColor = TextDark
         )
     )
@@ -594,7 +607,7 @@ private fun UserArea(
                         showExitDialog = false
                         context.findActivity()?.finish()
                     }
-                ) { Text("KELUAR", color = Burgundy) }
+                ) { Text("KELUAR", color = AppAccent) }
             },
             dismissButton = {
                 TextButton(onClick = { showExitDialog = false }) {
@@ -780,7 +793,7 @@ private fun UserArea(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            CircularProgressIndicator(color = Burgundy)
+            CircularProgressIndicator(color = AppAccent)
             Spacer(Modifier.height(12.dp))
             Text("Memuat profil BrushApp...", color = TextMuted)
         }
@@ -793,7 +806,7 @@ private fun UserArea(
             modifier = Modifier.fillMaxSize().background(Background).imePadding().padding(26.dp),
             verticalArrangement = Arrangement.Center
         ) {
-            Text("BrushApp", color = Burgundy, fontSize = 38.sp, fontWeight = FontWeight.Bold)
+            Text("BrushApp", color = AppAccent, fontSize = 38.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(12.dp))
             Text("Buat profil kamu", color = TextDark, fontSize = 23.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
@@ -811,7 +824,7 @@ private fun UserArea(
             Text(email, color = TextMuted, fontSize = 13.sp)
             if (profileError.isNotBlank()) {
                 Spacer(Modifier.height(10.dp))
-                Text(profileError, color = Burgundy, fontSize = 13.sp)
+                Text(profileError, color = AppAccent, fontSize = 13.sp)
             }
             Spacer(Modifier.height(18.dp))
             Button(
@@ -852,13 +865,13 @@ private fun UserArea(
                 enabled = !savingProfile,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(13.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Burgundy, contentColor = Color.White)
+                colors = ButtonDefaults.buttonColors(containerColor = AppAccent, contentColor = Color.White)
             ) {
                 if (savingProfile) CircularProgressIndicator(Modifier.height(21.dp), color = Color.White, strokeWidth = 2.dp)
                 else Text("SIMPAN PROFIL", fontWeight = FontWeight.Bold)
             }
             TextButton(onClick = onSignOut, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                Text("Keluar akun", color = Burgundy)
+                Text("Keluar akun", color = AppAccent)
             }
         }
         return
@@ -872,10 +885,10 @@ private fun UserArea(
         if (selectedTab == "Pesan" || (selectedTab == "Profil" && editingProfile)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (selectedTab == "Pesan") {
-                    Text("BrushApp", color = Burgundy, fontSize = 27.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("BrushApp", color = AppAccent, fontSize = 27.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 } else {
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { editingProfile = false; profileError = "" }) { Text("SELESAI", color = Burgundy) }
+                    TextButton(onClick = { editingProfile = false; profileError = "" }) { Text("SELESAI", color = AppAccent) }
                 }
             }
         }
@@ -883,7 +896,7 @@ private fun UserArea(
             "Pesan" -> {
                 when {
                     directoryLoading -> Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = Burgundy); Spacer(Modifier.height(10.dp)); Text("Memuat percakapan...", color = TextMuted)
+                        CircularProgressIndicator(color = AppAccent); Spacer(Modifier.height(10.dp)); Text("Memuat percakapan...", color = TextMuted)
                     }
                     messageFriends.isEmpty() -> Column(Modifier.weight(1f).fillMaxWidth().padding(28.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Belum ada percakapan", color = TextDark, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
@@ -909,7 +922,7 @@ private fun UserArea(
                 }
                 if (directoryLoading) {
                     Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = Burgundy); Spacer(Modifier.height(10.dp)); Text("Memuat teman...", color = TextMuted)
+                        CircularProgressIndicator(color = AppAccent); Spacer(Modifier.height(10.dp)); Text("Memuat teman...", color = TextMuted)
                     }
                 } else LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     val incoming = directoryUsers.filter { friendships[conversationId(uid, it.peer.uid)]?.let { f -> f.status == "pending" && f.recipientUid == uid } == true }
@@ -990,8 +1003,8 @@ private fun UserArea(
                     if (editingProfile) {
                         OutlinedTextField(value = editedName, onValueChange = { editedName = it; profileError = "" }, modifier = Modifier.fillMaxWidth(), label = { Text("Nama pengguna") }, singleLine = true, shape = RoundedCornerShape(12.dp))
                         Spacer(Modifier.height(8.dp))
-                        Button(onClick = { photoPicker.launch("image/*") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF5E5EB), contentColor = Burgundy)) { Text("PILIH FOTO DARI GALERI") }
-                        if (profileError.isNotBlank()) Text(profileError, color = Burgundy, fontSize = 12.sp)
+                        Button(onClick = { photoPicker.launch("image/*") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF5E5EB), contentColor = AppAccent)) { Text("PILIH FOTO DARI GALERI") }
+                        if (profileError.isNotBlank()) Text(profileError, color = AppAccent, fontSize = 12.sp)
                         Spacer(Modifier.height(14.dp))
                         Button(enabled = !savingProfile, onClick = {
                             val cleanName = editedName.trim()
@@ -1011,15 +1024,43 @@ private fun UserArea(
                                     }
                                 }
                             }
-                        }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Burgundy)) {
+                        }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = AppAccent)) {
                             Text(if (savingProfile) "MENYIMPAN..." else "SIMPAN PERUBAHAN", color = Color.White)
                         }
                         TextButton(onClick = { editedName = displayName; editedPhoto = profilePhoto; editingProfile = false; profileError = "" }) { Text("BATAL", color = TextMuted) }
                     } else {
-                        Button(onClick = { editedName = displayName; editedPhoto = profilePhoto; editingProfile = true; profileError = "" }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Burgundy)) { Text("EDIT PROFIL", color = Color.White) }
+                        Button(onClick = { editedName = displayName; editedPhoto = profilePhoto; editingProfile = true; profileError = "" }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = AppAccent)) { Text("EDIT PROFIL", color = Color.White) }
                         Spacer(Modifier.height(12.dp))
                         Text("PENGATURAN AKUN", color = TextDark, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Start))
                         Text("Email: $email", color = TextMuted, fontSize = 13.sp, modifier = Modifier.align(Alignment.Start).padding(top = 6.dp))
+                        Spacer(Modifier.height(22.dp))
+                        Text("TEMA WARNA", color = TextDark, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Start))
+                        Text("Pilih warna tampilan BrushApp", color = TextMuted, fontSize = 12.sp, modifier = Modifier.align(Alignment.Start).padding(top = 5.dp, bottom = 12.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            listOf(
+                                "Biru" to Color(0xFF1976D2),
+                                "Hijau" to Color(0xFF2E8B57),
+                                "Kuning" to Color(0xFFE0A800),
+                                "Ungu" to Color(0xFF7E57C2),
+                                "Merah" to Color(0xFFE53935)
+                            ).forEach { (themeName, themeColor) ->
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(
+                                        Modifier.size(38.dp)
+                                            .clip(CircleShape)
+                                            .background(themeColor)
+                                            .then(if (AppAccent == themeColor) Modifier.border(3.dp, TextDark, CircleShape) else Modifier)
+                                            .clickable {
+                                                AppAccent = themeColor
+                                                context.getSharedPreferences("brushapp_settings", Context.MODE_PRIVATE)
+                                                    .edit().putString("theme", themeName).apply()
+                                            }
+                                    )
+                                    Spacer(Modifier.height(5.dp))
+                                    Text(themeName, color = TextMuted, fontSize = 10.sp)
+                                }
+                            }
+                        }
                         Spacer(Modifier.weight(1f))
                         TextButton(onClick = onSignOut) { Text("KELUAR DARI AKUN", color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold) }
                     }
@@ -1033,7 +1074,7 @@ private fun UserArea(
                     if (tab != "Profil") { editingProfile = false; profileError = "" }
                 }) {
                     Text(when(tab) { "Pesan" -> "✉  Pesan"; "Teman" -> "♧  Teman"; else -> "●  Profil" },
-                        color = if (selectedTab == tab) Burgundy else TextMuted,
+                        color = if (selectedTab == tab) AppAccent else TextMuted,
                         fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Medium)
                 }
             }
@@ -1096,7 +1137,7 @@ private fun ProfileAvatar(photoBase64: String, diameter: androidx.compose.ui.uni
             modifier = Modifier.size(diameter).clip(RoundedCornerShape(50)).background(Color(0xFFF1E3E9)),
             contentAlignment = Alignment.Center
         ) {
-            Text("B", color = Burgundy, fontWeight = FontWeight.Bold, fontSize = (diameter.value * 0.42f).sp)
+            Text("B", color = AppAccent, fontWeight = FontWeight.Bold, fontSize = (diameter.value * 0.42f).sp)
         }
     }
 }
@@ -1140,16 +1181,16 @@ private fun FriendDirectoryRow(item: DirectoryUser, primaryLabel: String, second
             Text(item.peer.name, color = TextDark, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             if (unreadCount > 0) {
                 Box(
-                    modifier = Modifier.padding(start = 7.dp).background(Burgundy, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(start = 7.dp).background(AppAccent, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 4.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(unreadCount.toString(), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
-        if (busy) CircularProgressIndicator(Modifier.size(20.dp), color = Burgundy, strokeWidth = 2.dp)
+        if (busy) CircularProgressIndicator(Modifier.size(20.dp), color = AppAccent, strokeWidth = 2.dp)
         else {
-            TextButton(onClick = onPrimary, enabled = primaryLabel !in listOf("tunggu konfirm", "DITOLAK", "MEMPROSES...")) { Text(primaryLabel, color = Burgundy, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+            TextButton(onClick = onPrimary, enabled = primaryLabel !in listOf("tunggu konfirm", "DITOLAK", "MEMPROSES...")) { Text(primaryLabel, color = AppAccent, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
             if (secondaryLabel != null) TextButton(onClick = onSecondary) { Text(secondaryLabel, color = TextMuted, fontSize = 10.sp) }
         }
     }
@@ -1168,7 +1209,7 @@ private fun ConversationDirectoryRow(item: DirectoryUser, preview: String, time:
         }
         Column(horizontalAlignment = Alignment.End) {
             if (time != null) Text(formatMessageTime(time), color = TextMuted, fontSize = 10.sp)
-            if (unreadCount > 0) Box(Modifier.padding(top = 5.dp).background(Burgundy, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 4.dp), contentAlignment = Alignment.Center) {
+            if (unreadCount > 0) Box(Modifier.padding(top = 5.dp).background(AppAccent, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 4.dp), contentAlignment = Alignment.Center) {
                 Text(unreadCount.toString(), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
@@ -1300,16 +1341,16 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
             modifier = Modifier.fillMaxWidth().background(Color(0xFFFFF8FA)).padding(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextButton(onClick = onBack) { Text("‹ Kembali", color = Burgundy) }
+            TextButton(onClick = onBack) { Text("‹ Kembali", color = AppAccent) }
             ProfileAvatar(peer.photoBase64, 42.dp)
             Column(Modifier.padding(start = 10.dp)) {
                 Text(peer.name, color = TextDark, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
         }
-        if (error.isNotBlank()) Text(error, color = Burgundy, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
+        if (error.isNotBlank()) Text(error, color = AppAccent, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
         if (loading) {
             Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(color = Burgundy)
+                CircularProgressIndicator(color = AppAccent)
                 Spacer(Modifier.height(8.dp))
                 Text("Memuat pesan...", color = TextMuted)
             }
@@ -1359,7 +1400,7 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
                                 Text(formatMessageTime(message.createdAt), color = TextMuted, fontSize = 10.sp)
                                 if (mine) {
                                     if (message.readAt != null) {
-                                        DoubleCheckIcon(Burgundy)
+                                        DoubleCheckIcon(AppAccent)
                                     } else {
                                         Text(
                                             "✓",
@@ -1383,7 +1424,7 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
                 placeholder = { Text("Tulis pesan...") },
                 maxLines = 4,
                 shape = RoundedCornerShape(17.dp),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Burgundy, cursorColor = Burgundy, unfocusedBorderColor = Color(0xFFD8D2D6))
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AppAccent, cursorColor = AppAccent, unfocusedBorderColor = Color(0xFFD8D2D6))
             )
             Spacer(Modifier.width(8.dp))
             Button(
@@ -1407,7 +1448,7 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
                     }
                 },
                 enabled = input.trim().isNotEmpty() && !sending,
-                colors = ButtonDefaults.buttonColors(containerColor = Burgundy),
+                colors = ButtonDefaults.buttonColors(containerColor = AppAccent),
                 shape = RoundedCornerShape(14.dp)
             ) {
                 if (sending) CircularProgressIndicator(Modifier.height(18.dp), color = Color.White, strokeWidth = 2.dp)
