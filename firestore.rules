@@ -80,17 +80,18 @@ service cloud.firestore {
              && secondUid in get(friendshipPath(friendshipId)).data.users;
     }
 
-    function conversationAllowed(data) {
+    function conversationAllowed(data, conversationId) {
       return isMember(data)
              && data.members.size() == 2
-             && data.friendshipId is string
-             && acceptedFriendship(data.friendshipId, data.members[0], data.members[1]);
+             && (!data.keys().hasAny(['friendshipId'])
+                 || data.friendshipId == conversationId)
+             && acceptedFriendship(conversationId, data.members[0], data.members[1]);
     }
 
     function isConversationMember(conversationId) {
       return signedIn()
              && exists(/databases/$(database)/documents/conversations/$(conversationId))
-             && conversationAllowed(get(/databases/$(database)/documents/conversations/$(conversationId)).data);
+             && conversationAllowed(get(/databases/$(database)/documents/conversations/$(conversationId)).data, conversationId);
     }
 
     match /friendships/{friendshipId} {
@@ -144,8 +145,8 @@ service cloud.firestore {
     }
 
     match /conversations/{conversationId} {
-      allow get: if signedIn() && (resource == null || conversationAllowed(resource.data));
-      allow list: if conversationAllowed(resource.data);
+      allow get: if signedIn() && (resource == null || conversationAllowed(resource.data, conversationId));
+      allow list: if conversationAllowed(resource.data, conversationId);
 
       allow create: if signedIn()
                     && request.resource.data.keys().hasOnly([
@@ -161,13 +162,13 @@ service cloud.firestore {
                     && request.resource.data.friendshipId == conversationId
                     && acceptedFriendship(conversationId, request.resource.data.members[0], request.resource.data.members[1]);
 
-      allow update: if conversationAllowed(resource.data)
+      allow update: if conversationAllowed(resource.data, conversationId)
                     && request.resource.data.members == resource.data.members
-                    && request.resource.data.friendshipId == resource.data.friendshipId
+                    && request.resource.data.friendshipId == conversationId
                     && request.resource.data.memberInfo == resource.data.memberInfo
                     && request.resource.data.createdBy == resource.data.createdBy
                     && request.resource.data.diff(resource.data).affectedKeys()
-                         .hasOnly(['lastMessage', 'lastSenderUid', 'updatedAt'])
+                         .hasOnly(['lastMessage', 'lastSenderUid', 'updatedAt', 'friendshipId'])
                     && request.resource.data.lastSenderUid == request.auth.uid
                     && request.resource.data.lastMessage is string
                     && request.resource.data.lastMessage.size() <= 4000;
