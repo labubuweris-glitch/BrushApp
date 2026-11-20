@@ -19,6 +19,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -65,7 +66,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -1192,12 +1195,16 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
                             ) {
                                 Text(formatMessageTime(message.createdAt), color = TextMuted, fontSize = 10.sp)
                                 if (mine) {
-                                    Text(
-                                        "✓",
-                                        color = if (message.readAt != null) Burgundy else Color(0xFF9A9699),
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                    if (message.readAt != null) {
+                                        DoubleCheckIcon(Burgundy)
+                                    } else {
+                                        Text(
+                                            "✓",
+                                            color = Color(0xFF9A9699),
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1248,6 +1255,37 @@ private fun ChatScreen(db: FirebaseFirestore, currentUid: String, peer: ChatPeer
 }
 
 
+
+@Composable
+private fun DoubleCheckIcon(color: Color) {
+    Canvas(modifier = Modifier.size(width = 17.dp, height = 12.dp)) {
+        val stroke = 1.7.dp.toPx()
+        val firstX = 0f
+        val secondX = 6.5.dp.toPx()
+        val startY = size.height * 0.52f
+        val middleY = size.height * 0.82f
+        val endY = size.height * 0.16f
+        val shortLeg = 3.dp.toPx()
+        val longLeg = 6.dp.toPx()
+
+        listOf(firstX, secondX).forEach { x ->
+            drawLine(
+                color = color,
+                start = Offset(x, startY),
+                end = Offset(x + shortLeg, middleY),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                color = color,
+                start = Offset(x + shortLeg, middleY),
+                end = Offset(x + shortLeg + longLeg, endY),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round
+            )
+        }
+    }
+}
 
 private fun sendWorkerNotification(conversationId: String, messageId: String) {
     val user = FirebaseAuth.getInstance().currentUser ?: return
