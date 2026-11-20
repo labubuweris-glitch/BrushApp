@@ -488,6 +488,7 @@ private fun UserArea(
     var directoryLoading by remember(uid) { mutableStateOf(true) }
     var directoryError by remember(uid) { mutableStateOf("") }
     var friendActionError by remember(uid) { mutableStateOf("") }
+    var friendshipError by remember(uid) { mutableStateOf("") }
     var selectedPeer by remember { mutableStateOf<ChatPeer?>(null) }
     var openingPeerUid by remember { mutableStateOf("") }
     var showExitDialog by remember { mutableStateOf(false) }
@@ -526,10 +527,13 @@ private fun UserArea(
         val friendshipListener = db.collection("friendships")
             .whereArrayContains("users", uid)
             .addSnapshotListener { snapshot, exception ->
-                if (exception == null && snapshot != null) {
+                if (exception != null) {
+                    friendshipError = "Gagal membaca pertemanan: ${exception.localizedMessage ?: "Periksa izin Firestore."}"
+                } else if (snapshot != null) {
                     friendships = snapshot.documents.associate { doc ->
                         doc.id to FriendLink(doc.getString("status").orEmpty(), doc.getString("requesterUid").orEmpty(), doc.getString("recipientUid").orEmpty())
                     }
+                    friendshipError = ""
                 }
             }
         directoryLoading = true
@@ -795,6 +799,10 @@ private fun UserArea(
         } else {
         Spacer(Modifier.height(18.dp))
         Text("SEMUA PENGGUNA", color = Burgundy, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        if (friendshipError.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(friendshipError, color = Color(0xFFD32F2F), fontSize = 12.sp)
+        }
         if (friendActionError.isNotBlank()) {
             Spacer(Modifier.height(4.dp))
             Text(friendActionError, color = TextMuted, fontSize = 12.sp)
