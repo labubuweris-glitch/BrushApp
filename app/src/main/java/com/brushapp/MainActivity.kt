@@ -485,6 +485,8 @@ private fun UserArea(
     }
     var directoryUsers by remember(uid) { mutableStateOf<List<DirectoryUser>>(emptyList()) }
     var friendships by remember(uid) { mutableStateOf<Map<String, FriendLink>>(emptyMap()) }
+    var requesterFriendships by remember(uid) { mutableStateOf<Map<String, FriendLink>>(emptyMap()) }
+    var recipientFriendships by remember(uid) { mutableStateOf<Map<String, FriendLink>>(emptyMap()) }
     var directoryLoading by remember(uid) { mutableStateOf(true) }
     var directoryError by remember(uid) { mutableStateOf("") }
     var friendActionError by remember(uid) { mutableStateOf("") }
@@ -524,15 +526,29 @@ private fun UserArea(
     }
 
     DisposableEffect(db, uid) {
-        val friendshipListener = db.collection("friendships")
-            .whereArrayContains("users", uid)
+        val requesterListener = db.collection("friendships")
+            .whereEqualTo("requesterUid", uid)
             .addSnapshotListener { snapshot, exception ->
                 if (exception != null) {
-                    friendshipError = "Gagal membaca pertemanan: ${exception.localizedMessage ?: "Periksa izin Firestore."}"
+                    friendshipError = "Gagal membaca permintaan terkirim: ${exception.localizedMessage ?: "Periksa izin Firestore."}"
                 } else if (snapshot != null) {
-                    friendships = snapshot.documents.associate { doc ->
+                    requesterFriendships = snapshot.documents.associate { doc ->
                         doc.id to FriendLink(doc.getString("status").orEmpty(), doc.getString("requesterUid").orEmpty(), doc.getString("recipientUid").orEmpty())
                     }
+                    friendships = requesterFriendships + recipientFriendships
+                    friendshipError = ""
+                }
+            }
+        val recipientListener = db.collection("friendships")
+            .whereEqualTo("recipientUid", uid)
+            .addSnapshotListener { snapshot, exception ->
+                if (exception != null) {
+                    friendshipError = "Gagal membaca permintaan masuk: ${exception.localizedMessage ?: "Periksa izin Firestore."}"
+                } else if (snapshot != null) {
+                    recipientFriendships = snapshot.documents.associate { doc ->
+                        doc.id to FriendLink(doc.getString("status").orEmpty(), doc.getString("requesterUid").orEmpty(), doc.getString("recipientUid").orEmpty())
+                    }
+                    friendships = requesterFriendships + recipientFriendships
                     friendshipError = ""
                 }
             }
@@ -557,7 +573,7 @@ private fun UserArea(
                     directoryLoading = false
                 }
             }
-        onDispose { listener.remove(); friendshipListener.remove() }
+        onDispose { listener.remove(); requesterListener.remove(); recipientListener.remove() }
     }
 
 
