@@ -98,8 +98,8 @@ service cloud.firestore {
                   && (resource == null
                       || (resource.data.users is list && request.auth.uid in resource.data.users));
       allow list: if signedIn()
-                  && resource.data.users is list
-                  && request.auth.uid in resource.data.users;
+                  && (resource.data.requesterUid == request.auth.uid
+                      || resource.data.recipientUid == request.auth.uid);
 
       allow create: if signedIn()
                     && request.resource.data.keys().hasOnly([
